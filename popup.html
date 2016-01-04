@@ -7,67 +7,73 @@
 <html>
 
 <head>
-  <title>Getting Started Extension's Popup</title>
-  <style>
-    body {
-      font-family: "Segoe UI", "Lucida Grande", Tahoma, sans-serif;
-      font-size: 100%;
-      min-width: 420px;
-      overflow-x: hidden;
-      font-size: 12px;
-    }
-    
-    input,
-    textarea {
-      width: 420px;
-    }
-    
-    input#save {
-      font-weight: bold;
-      width: auto;
-    }
-  </style>
-
-  <script src="popup.js"></script>
+    <title>Getting Started Extension's Popup</title>
+    <style>
+        body {
+            font-family: "Segoe UI", "Lucida Grande", Tahoma, sans-serif;
+            font-size: 100%;
+            min-width: 420px;
+            overflow-x: hidden;
+            font-size: 12px;
+        }
+        
+        input,
+        textarea {
+            width: 420px;
+        }
+        
+        input#save {
+            font-weight: bold;
+            width: auto;
+        }
+    </style>
+    <script src="fetch.js"></script>
+    <script src="popup.js"></script>
 
 </head>
 
 <body>
-  <form id="addbookmark">
-    <p>
-      <label for="title">Title</label>
-      <br />
-      <input type="text" id="title" name="title" size="50" value="" />
-    </p>
-    <p>
-      <label for="url">Url</label>
-      <br />
-      <input type="text" id="url" name="url" size="50" value="" />
-    </p>
-    <p>
-      <label for="type">Category</label>
-      <br />
-      <select id="type">
-        <option>Must see</option>
-        <option>Ideas, Thoughts and process</option>
-        <option>Software development</option>
-        <option>C#</option>
-        <option>Javascript</option>
-        <option>Other Languages</option>
-        <option>Html, CSS, CSS preprocessors and all thing designy</option>
-        <option>Tools</option>
-        <option>Cloud, DevOps and Security</option>
-        <option>Containers</option>
-        <option>Machine Learning and other very fancy buzzwords</option>
-        <option>Videos</option>
-        <option>Made me Laugh or Cry. </option>
-      </select>
-    </p>
-    <input id="save" type="submit" value="Save" />
-    <span id="status-display"></span>
-     <span id="output"></span>
-    </p>
-  </form>
+    <form id="addbookmark">
+        <p>
+            <label for="title">Title</label>
+            <br />
+            <input type="text" id="title" name="title" size="50" value="" />
+        </p>
+        <p>
+            <label for="url">Url</label>
+            <br />
+            <input type="text" id="url" name="url" size="50" value="" />
+        </p>
+        <p>
+            <label for="type">Category</label>
+            <br />
+            <select id="type">
+                <option>Must see</option>
+                <option>Ideas, Thoughts and process</option>
+                <option>Software development</option>
+                <option>C#</option>
+                <option>Javascript</option>
+                <option>Other Languages</option>
+                <option>Html, CSS, CSS preprocessors and all thing designy</option>
+                <option>Tools</option>
+                <option>Cloud, DevOps and Security</option>
+                <option>Containers</option>
+                <option>Machine Learning and other very fancy buzzwords</option>
+                <option>Videos</option>
+                <option>Made me Laugh or Cry. </option>
+            </select>
+        </p>
+         <p>
+            <label for="description">Description</label>
+            <br />
+           <textarea id="description" name="description"></textarea>
+        </p>
+        <input type="text" id="link" value="" />
+        <input id="save" type="submit" value="Save" />
+        <span id="status-display"></span>
+        <span id="output"></span>
+        </p>
+    </form>
 
 </body>
 
