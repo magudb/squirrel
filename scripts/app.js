@@ -1,3 +1,7 @@
+require("../content/bulma.sass");
+require("babel-polyfill");
+var fetch = require("./fetch.js")
+
 // This callback function is called when the content script has been 
 // injected and returned its results
 
@@ -5,17 +9,49 @@ function onPageDetailsReceived(pageDetails) {
     var title = pageDetails.summary || pageDetails.title;
     document.getElementById('title').value = title
     document.getElementById('url').value = pageDetails.url;
-
-
     document.getElementById('link').value = "[" + toTitleCase(title) + "](" + getPathFromUrl(pageDetails.url) + ")"
     document.getElementById('link').focus();
 }
+
 function getPathFromUrl(url) {
-    return url.split(/[?#]/)[0];
+    // Strip UTM parameters
+    if (url.indexOf('utm_') > url.indexOf('?')) {
+        url = url.replace(
+            /([\?\&]utm_(reader|source|medium|campaign|content|term)=[^&#]+)/ig,
+            '');
+    }
+
+    // Strip MailChimp parameters
+    if (url.indexOf('mc_eid') > url.indexOf('?') || url.indexOf('mc_cid') > url.indexOf('?')) {
+        url = url.replace(
+            /([\?\&](mc_cid|mc_eid)=[^&#]+)/ig,
+            '');
+    }
+
+    // Strip YouTube parameters
+    if (url.indexOf('http://www.youtube.com/watch') == 0 ||
+        url.indexOf('https://www.youtube.com/watch') == 0) {
+        url = url.replace(/([\?\&](feature|app|ac|src_vid|annotation_id)=[^&#]*)/ig, '');
+    }
+
+    // Strip Yandex openstat parameters
+    if (url.indexOf('_openstat') > url.indexOf('?')) {
+        url = url.replace(/([\?\&]_openstat=[^&#]+)/ig, '');
+    }
+
+    // If there were other query parameters, and the stripped ones were first,
+    // then we need to convert the first ampersand to a ? to still have a valid
+    // URL.
+    if (url.indexOf('&') != -1 && url.indexOf('?') == -1) {
+        url = url.replace('&', '?');
+    }
+
+    return url;
 }
 function toTitleCase(str) {
     return str.replace(/\w\S*/g, function (txt) { return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase(); });
 }
+
 // Global reference to the status display SPAN
 var statusDisplay = null;
 
@@ -32,7 +68,8 @@ function addBookmark() {
 
     chrome.identity.getProfileUserInfo(function (user) {
         if (!user || !user.id) {
-            alert("You need a user, please login to chrome");
+           // notie.alert(3, 'You need a user, please login to chrome.', 5);
+            return;
         }
         var model = {
             "userid": user.id,
@@ -43,7 +80,7 @@ function addBookmark() {
             "date": new Date()
         };
 
-
+       // notie.alert(1, JSON.stringify(model), 1.5);
         console.log(JSON.stringify(model));
         // var request = new XMLHttpRequest();
         // request.open('POST', 'http://localhost:9000/services/link', true);

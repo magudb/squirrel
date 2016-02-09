@@ -1,8 +1,8 @@
-(function() {
+module.exports = (function() {
   'use strict';
 
   if (self.fetch) {
-    return
+    return self.fetch;
   }
 
   function normalizeName(name) {
@@ -378,4 +378,5 @@
     })
   }
   self.fetch.polyfill = true
+  return self.fetch;
 })();

@@ -7,74 +7,82 @@
 <html>
 
 <head>
-    <title>Getting Started Extension's Popup</title>
-    <style>
-        body {
-            font-family: "Segoe UI", "Lucida Grande", Tahoma, sans-serif;
-            font-size: 100%;
-            min-width: 420px;
-            overflow-x: hidden;
-            font-size: 12px;
-        }
-        
-        input,
-        textarea {
-            width: 420px;
-        }
-        
-        input#save {
-            font-weight: bold;
-            width: auto;
-        }
-    </style>
-    <script src="fetch.js"></script>
-    <script src="popup.js"></script>
+    <title>Link Squirrel</title>
+    <link href="/public/css/bundle.css" rel="stylesheet" />
+    <script src="public/js/app.js"></script>
 
 </head>
 
 <body>
-    <form id="addbookmark">
-        <p>
-            <label for="title">Title</label>
-            <br />
-            <input type="text" id="title" name="title" size="50" value="" />
-        </p>
-        <p>
-            <label for="url">Url</label>
-            <br />
-            <input type="text" id="url" name="url" size="50" value="" />
-        </p>
-        <p>
-            <label for="type">Category</label>
-            <br />
-            <select id="type">
-                <option>Must see</option>
-                <option>Ideas, Thoughts and process</option>
-                <option>Software development</option>
-                <option>C#</option>
-                <option>Javascript</option>
-                <option>Other Languages</option>
-                <option>Html, CSS, CSS preprocessors and all thing designy</option>
-                <option>Tools</option>
-                <option>Cloud, DevOps and Security</option>
-                <option>Containers</option>
-                <option>Machine Learning and other very fancy buzzwords</option>
-                <option>Videos</option>
-                <option>Made me Laugh or Cry. </option>
-            </select>
-        </p>
-         <p>
-            <label for="description">Description</label>
-            <br />
-           <textarea id="description" name="description"></textarea>
-        </p>
-        <input type="text" id="link" value="" />
-        <input id="save" type="submit" value="Save" />
-        <span id="status-display"></span>
-        <span id="output"></span>
-        </p>
-    </form>
+    <header class="header">
+  <div class="container">
+    <!-- Left side -->
+    <div class="header-left">
+      <a class="header-item" href="https://www.wesquirrel.com">
+       WeSquirrel
+      </a>
+    </div>
 
+    <!-- Hamburger menu (on mobile) -->
+    <span class="header-toggle">
+      <span></span>
+      <span></span>
+      <span></span>
+    </span>    
+  </div>
+</header>
+    <section class="section">
+        <div class="container">
+            <div class="columns">
+                <div class="column">
+                    <form id="addbookmark">
+                        <p class="control">
+                            <input class="input is-medium" type="text" id="title" name="title" size="50" value="" placeholder="Title" />
+                        </p>
+                        <p class="control">                          
+                            <input class="input is-medium" type="text" id="url" name="url" size="50" value="" />
+                        </p>
+                        <p class="control">                           
+                            <select id="type" class="select is-medium">
+                                <option>Must see</option>
+                                <option>Ideas, Thoughts and process</option>
+                                <option>Software development</option>
+                                <option>C#</option>
+                                <option>Javascript</option>
+                                <option>Other Languages</option>
+                                <option>Html, CSS, CSS preprocessors and all thing designy</option>
+                                <option>Tools</option>
+                                <option>Cloud, DevOps and Security</option>
+                                <option>Containers</option>
+                                <option>Machine Learning and other very fancy buzzwords</option>
+                                <option>Videos</option>
+                                <option>Made me Laugh or Cry. </option>
+                            </select>
+                        </p>
+                        <p class="control">                            
+                            <textarea id="description" name="description" class="textarea is-medium"></textarea>
+                        </p>
+                         <p class="control">    
+                        <input type="text" id="link" value="" class="input is-medium"/>
+                         </p>
+                         <p class="control">
+                        <input id="save" type="submit" value="Save" class="button is-primary is-medium" />
+                        <span id="status-display"></span>
+                        <span id="output"></span>
+                         </p>
+                        </p>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </section>
+    <footer class="footer">
+  <div class="container">
+    <div class="content is-centered">     
+        <strong>WeSquirrel</strong> by <a href="http://udbjorg.net">Magnus Udbjorg</a>.      
+    </div>
+  </div>
+</footer>
 </body>
 
 </html>
