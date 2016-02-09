@@ -1,16 +1,19 @@
 require("../content/bulma.sass");
 require("babel-polyfill");
-var fetch = require("./fetch.js")
+var notie =  require("./notification")
+var fetch = require("./fetch.js");
 
 // This callback function is called when the content script has been 
 // injected and returned its results
 
 function onPageDetailsReceived(pageDetails) {
+    
     var title = pageDetails.summary || pageDetails.title;
     document.getElementById('title').value = title
     document.getElementById('url').value = pageDetails.url;
     document.getElementById('link').value = "[" + toTitleCase(title) + "](" + getPathFromUrl(pageDetails.url) + ")"
     document.getElementById('link').focus();
+   
 }
 
 function getPathFromUrl(url) {
@@ -68,7 +71,7 @@ function addBookmark() {
 
     chrome.identity.getProfileUserInfo(function (user) {
         if (!user || !user.id) {
-           // notie.alert(3, 'You need a user, please login to chrome.', 5);
+            notie.alert('You need a user, please login to chrome.');
             return;
         }
         var model = {
@@ -80,7 +83,7 @@ function addBookmark() {
             "date": new Date()
         };
 
-       // notie.alert(1, JSON.stringify(model), 1.5);
+        notie.alert(JSON.stringify(model));
         console.log(JSON.stringify(model));
         // var request = new XMLHttpRequest();
         // request.open('POST', 'http://localhost:9000/services/link', true);

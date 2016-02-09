@@ -3,33 +3,32 @@ module.exports = (function () {
     var exports = {};
 
     var insert = function (notification) {
-        var newLyric = document.createElement("p");
-        newLyric.innerHTML = notification;
+        var d1 = document.querySelector('body');
 
-        var body = document.getElementsByTagName("body")[0];
-        var start = body.firstChild;
-        document.insertBefore(newLyric, start);
+        d1.insertAdjacentHTML('afterbegin', notification);
     }
 
     exports.close = function () {
-
+        console.log("exports.close");
+        var d1 = document.querySelector('#notification');
+        d1.remove();
+         var el = document.querySelector("#notification_close");
+        el.removeEventListener("click", exports.close);
     };
 
     exports.alert = function (message) {
         var model = {
-            type: "is-alert",
+            type: "is-danger",
             message: message
         }
         var alert = template(model);
+
         insert(alert);
+        
+        var el = document.querySelector("#notification_close");
+        el.addEventListener("click", exports.close);
     }
-
-    window.notification = {
-        close: function () {
-            exports.close();
-        }
-    }
-
+ 
     return exports;
 })();
 
