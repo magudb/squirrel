@@ -1,19 +1,20 @@
 require("../content/bulma.sass");
 require("babel-polyfill");
-var notie =  require("./notification")
+var notie = require("./notification")
 var fetch = require("./fetch.js");
-
+var Headers = require("./headers.js");
+var taskify = require('@bahmutov/taskify')
 // This callback function is called when the content script has been 
 // injected and returned its results
 
 function onPageDetailsReceived(pageDetails) {
-    
+
     var title = pageDetails.summary || pageDetails.title;
     document.getElementById('title').value = title
     document.getElementById('url').value = pageDetails.url;
     document.getElementById('link').value = "[" + toTitleCase(title) + "](" + getPathFromUrl(pageDetails.url) + ")"
     document.getElementById('link').focus();
-   
+
 }
 
 function getPathFromUrl(url) {
@@ -21,6 +22,12 @@ function getPathFromUrl(url) {
     if (url.indexOf('utm_') > url.indexOf('?')) {
         url = url.replace(
             /([\?\&]utm_(reader|source|medium|campaign|content|term)=[^&#]+)/ig,
+            '');
+    }
+    
+    if(url.indexOf("mkt_tok")> url.indexOf('?')){
+        url = url.replace(
+            /([\?\&](mkt_tok)=[^&#]+)/ig,
             '');
     }
 
@@ -68,6 +75,17 @@ function addBookmark() {
     var e = document.getElementById("type");
     var description = document.getElementById('description').value;
     var category = e.options[e.selectedIndex].value;
+    var getUserProfile = taskify(chrome.identity.getProfileUserInfo);
+    getUserProfile.fork(
+        err => console.log(err),
+        user => {
+            if (!user || !user.id) {
+                notie.alert('You need a user, please login to chrome.');
+                return;
+            }
+            notie.alert('you are an user!.');
+        }
+        );
 
     chrome.identity.getProfileUserInfo(function (user) {
         if (!user || !user.id) {
@@ -85,10 +103,7 @@ function addBookmark() {
 
         notie.alert(JSON.stringify(model));
         console.log(JSON.stringify(model));
-        // var request = new XMLHttpRequest();
-        // request.open('POST', 'http://localhost:9000/services/link', true);
-        // request.setRequestHeader('Content-Type', 'application/json');
-        // request.send(JSON.stringify(model));
+
         var myHeaders = new Headers();
         myHeaders.append("Content-Type", "application/json");
 
