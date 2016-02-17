@@ -2708,3 +2708,7 @@ a.menu-block:hover {
       border-bottom: 1px solid #d3d6db; }
       .footer a:not(.icon):hover {
         border-bottom-color: #1fc8db; }
+
+html, body {
+  height: 500px;
+  width: 400px; }

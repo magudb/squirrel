@@ -15,22 +15,22 @@
 
 <body>
     <header class="header">
-  <div class="container">
-    <!-- Left side -->
-    <div class="header-left">
-      <a class="header-item" href="https://www.wesquirrel.com">
+        <div class="container">
+            <!-- Left side -->
+            <div class="header-left">
+                <a class="header-item" href="https://www.wesquirrel.com">
        WeSquirrel
       </a>
-    </div>
+            </div>
 
-    <!-- Hamburger menu (on mobile) -->
-    <span class="header-toggle">
+            <!-- Hamburger menu (on mobile) -->
+            <span class="header-toggle">
       <span></span>
-      <span></span>
-      <span></span>
-    </span>    
-  </div>
-</header>
+            <span></span>
+            <span></span>
+            </span>
+        </div>
+    </header>
     <section class="section">
         <div class="container">
             <div class="columns">
@@ -39,37 +39,24 @@
                         <p class="control">
                             <input class="input is-medium" type="text" id="title" name="title" size="50" value="" placeholder="Title" />
                         </p>
-                        <p class="control">                          
-                            <input class="input is-medium" type="text" id="url" name="url" size="50" value="" />
-                        </p>
-                        <p class="control">                           
-                            <select id="type" class="select is-medium">
-                                <option>Must see</option>
-                                <option>Ideas, Thoughts and process</option>
-                                <option>Software development</option>
-                                <option>C#</option>
-                                <option>Javascript</option>
-                                <option>Other Languages</option>
-                                <option>Html, CSS, CSS preprocessors and all thing designy</option>
-                                <option>Tools</option>
-                                <option>Cloud, DevOps and Security</option>
-                                <option>Containers</option>
-                                <option>Machine Learning and other very fancy buzzwords</option>
-                                <option>Videos</option>
-                                <option>Made me Laugh or Cry. </option>
+                        <p class="control is-grouped">
+                            <select id="type" class="select is-medium ">
+                                <option>Must see</option>                              
                             </select>
+                            <a class="button is-info">Add</a>
                         </p>
-                        <p class="control">                            
+                        <p class="control">
                             <textarea id="description" name="description" class="textarea is-medium"></textarea>
                         </p>
-                         <p class="control">    
-                        <input type="text" id="link" value="" class="input is-medium"/>
-                         </p>
-                         <p class="control">
-                        <input id="save" type="submit" value="Save" class="button is-primary is-medium" />
-                        <span id="status-display"></span>
-                        <span id="output"></span>
-                         </p>
+                        <p class="control">
+                            <input type="text" id="link" value="" class="input is-medium" />
+                        </p>
+                        <p class="control">
+                            <input class="input is-medium" type="hidden" id="url" name="url" size="50" value="" />
+                            <input id="save" type="submit" value="Save" class="button is-primary is-medium" />
+                            <span id="status-display"></span>
+                            <span id="output"></span>
+                        </p>
                         </p>
                     </form>
                 </div>
@@ -77,12 +64,12 @@
         </div>
     </section>
     <footer class="footer">
-  <div class="container">
-    <div class="content is-centered">     
-        <strong>WeSquirrel</strong> by <a href="http://udbjorg.net">Magnus Udbjorg</a>.      
-    </div>
-  </div>
-</footer>
+        <div class="container">
+            <div class="content is-centered">
+                <strong>WeSquirrel</strong> by <a href="http://udbjorg.net">Magnus Udbjorg</a>.
+            </div>
+        </div>
+    </footer>
 </body>
 
 </html>

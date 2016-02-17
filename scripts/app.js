@@ -1,63 +1,21 @@
 require("../content/bulma.sass");
 require("babel-polyfill");
+var Url = require("./extensions/Url.js");
 var notie = require("./notification")
-var fetch = require("./fetch.js");
-var Headers = require("./headers.js");
-var taskify = require('@bahmutov/taskify')
+
 // This callback function is called when the content script has been 
 // injected and returned its results
 
-function onPageDetailsReceived(pageDetails) {
-
-    var title = pageDetails.summary || pageDetails.title;
-    document.getElementById('title').value = title
-    document.getElementById('url').value = pageDetails.url;
-    document.getElementById('link').value = "[" + toTitleCase(title) + "](" + getPathFromUrl(pageDetails.url) + ")"
-    document.getElementById('link').focus();
-
-}
-
-function getPathFromUrl(url) {
-    // Strip UTM parameters
-    if (url.indexOf('utm_') > url.indexOf('?')) {
-        url = url.replace(
-            /([\?\&]utm_(reader|source|medium|campaign|content|term)=[^&#]+)/ig,
-            '');
-    }
+function onPageDetailsReceived(pageDetails) {   
+    var title = toTitleCase(pageDetails.summary || pageDetails.title);    
+    var url = new Url(pageDetails.url);   
     
-    if(url.indexOf("mkt_tok")> url.indexOf('?')){
-        url = url.replace(
-            /([\?\&](mkt_tok)=[^&#]+)/ig,
-            '');
-    }
-
-    // Strip MailChimp parameters
-    if (url.indexOf('mc_eid') > url.indexOf('?') || url.indexOf('mc_cid') > url.indexOf('?')) {
-        url = url.replace(
-            /([\?\&](mc_cid|mc_eid)=[^&#]+)/ig,
-            '');
-    }
-
-    // Strip YouTube parameters
-    if (url.indexOf('http://www.youtube.com/watch') == 0 ||
-        url.indexOf('https://www.youtube.com/watch') == 0) {
-        url = url.replace(/([\?\&](feature|app|ac|src_vid|annotation_id)=[^&#]*)/ig, '');
-    }
-
-    // Strip Yandex openstat parameters
-    if (url.indexOf('_openstat') > url.indexOf('?')) {
-        url = url.replace(/([\?\&]_openstat=[^&#]+)/ig, '');
-    }
-
-    // If there were other query parameters, and the stripped ones were first,
-    // then we need to convert the first ampersand to a ? to still have a valid
-    // URL.
-    if (url.indexOf('&') != -1 && url.indexOf('?') == -1) {
-        url = url.replace('&', '?');
-    }
-
-    return url;
+    document.getElementById('title').value = title;
+    document.getElementById('url').value = url.toString();
+    document.getElementById('link').value = "[" + title + "](" + url.toString() + ")"
+    document.getElementById('link').focus();
 }
+
 function toTitleCase(str) {
     return str.replace(/\w\S*/g, function (txt) { return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase(); });
 }
@@ -75,17 +33,6 @@ function addBookmark() {
     var e = document.getElementById("type");
     var description = document.getElementById('description').value;
     var category = e.options[e.selectedIndex].value;
-    var getUserProfile = taskify(chrome.identity.getProfileUserInfo);
-    getUserProfile.fork(
-        err => console.log(err),
-        user => {
-            if (!user || !user.id) {
-                notie.alert('You need a user, please login to chrome.');
-                return;
-            }
-            notie.alert('you are an user!.');
-        }
-        );
 
     chrome.identity.getProfileUserInfo(function (user) {
         if (!user || !user.id) {
@@ -101,17 +48,8 @@ function addBookmark() {
             "date": new Date()
         };
 
-        notie.alert(JSON.stringify(model));
-        console.log(JSON.stringify(model));
-
-        var myHeaders = new Headers();
-        myHeaders.append("Content-Type", "application/json");
-
-        fetch('http://localhost:9000/services/link', {
-            method: 'post',
-            headers: myHeaders,
-            body: JSON.stringify(model)
-        });
+        notie.alert(JSON.stringify(model));    
+      
     });
 }
 

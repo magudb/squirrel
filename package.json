@@ -5,7 +5,10 @@
   "main": "app.js",
   "dependencies": {
     "@bahmutov/taskify": "^1.0.0",
-    "bulma": "^0.0.11"
+    "@cycle/core": "^6.0.2",
+    "@cycle/dom": "^9.0.2",
+    "bulma": "^0.0.11",
+    "rx": "^4.0.7"
   },
   "devDependencies": {
     "babel-core": "^6.4.5",
