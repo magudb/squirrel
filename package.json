@@ -4,8 +4,10 @@
   "description": "link squirrel",
   "main": "app.js",
   "dependencies": {
-    "@bahmutov/taskify": "^1.0.0",
-    "bulma": "^0.0.11"
+    "bulma": "^0.0.11",
+    "fetch-polyfill": "^0.8.2",
+    "vue": "^1.0.26",
+    "vuex": "^1.0.0-rc.2"
   },
   "devDependencies": {
     "babel-core": "^6.4.5",
@@ -23,6 +25,7 @@
     "sass-loader": "^3.1.2",
     "style-loader": "^0.13.0",
     "url-loader": "^0.5.7",
+    "json-loader": "^0.5.4",
     "webpack": "^1.12.11"
   },
   "scripts": {

@@ -1,0 +1,26 @@
+<div id="addbookmark">
+    <p class="control">
+        <input class="input is-medium" type="text" id="title" name="title" size="50" value="" placeholder="Title" v-model="title"
+        />
+    </p>
+    <p class="control">
+        <input class="input is-medium" type="text" id="url" name="url" size="50" value="" v-model="url" />
+    </p>
+    <p class="control">
+        <select id="type" class="select is-medium" v-model="category">
+            <option v-for="category in categories" v-bind:value="category">{{category}}</option>
+        </select>
+    </p>
+    <p class="control">
+        <textarea id="description" name="description" class="textarea is-medium" v-model="description"></textarea>
+    </p>
+    <p class="control">
+        <input type="text" id="link" value="" class="input is-medium" v-model="link" autofocus />
+    </p>
+    <p class="control">
+        <input id="save" type="submit" value="Save" class="button is-primary is-medium" v-on:click="save" />
+        <span id="status-display"></span>
+        <span id="output"></span>
+    </p>
+    </p>
+</div>

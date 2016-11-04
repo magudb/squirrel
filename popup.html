@@ -9,11 +9,11 @@
 <head>
     <title>Link Squirrel</title>
     <link href="/public/css/bundle.css" rel="stylesheet" />
-    <script src="public/js/app.js"></script>
+
 
 </head>
 
-<body>
+<body id="squirrel">
     <header class="header">
   <div class="container">
     <!-- Left side -->
@@ -35,7 +35,8 @@
         <div class="container">
             <div class="columns">
                 <div class="column">
-                    <form id="addbookmark">
+                    <bookmaker></bookmaker>
+                    <!--<form id="addbookmark">
                         <p class="control">
                             <input class="input is-medium" type="text" id="title" name="title" size="50" value="" placeholder="Title" />
                         </p>
@@ -71,7 +72,7 @@
                         <span id="output"></span>
                          </p>
                         </p>
-                    </form>
+                    </form>-->
                 </div>
             </div>
         </div>
@@ -83,6 +84,8 @@
     </div>
   </div>
 </footer>
+    <script src="public/js/vendor.js"></script>
+    <script src="public/js/app.js"></script>
 </body>
 
 </html>
