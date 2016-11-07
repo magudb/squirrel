@@ -1,5 +1,5 @@
 var Vuex = require("vuex");
-import createLogger from 'vuex/logger'
+
 module.exports = function() {  
     var state = {
        activeBookmark:{}
@@ -13,7 +13,6 @@ module.exports = function() {
 
     return new Vuex.Store({
         state,
-        mutations,
-        middlewares: [createLogger]
+        mutations
     });
 };

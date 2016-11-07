@@ -146,7 +146,7 @@ webpackJsonp([1],{
 	            eventPage.getPageDetails(function (pageDetails) {
 	                self.title = pageDetails.summary || pageDetails.title;
 	                self.url = urlService.SanitizeUrl(pageDetails.url);
-	                self.link = "[" + stringService.toTitleCase(self.title) + "](" + urlService.SanitizeUrl(pageDetails.url) + ")";
+	                self.link = "[" + stringService.toTitleCase(self.title) + "](" + urlService.SanitizeUrl(pageDetails.url) + "){:target=\"_blank\"}";
 	                done();
 	            });
 	        });
@@ -167,12 +167,6 @@ webpackJsonp([1],{
 
 	"use strict";
 
-	var _logger = __webpack_require__(308);
-
-	var _logger2 = _interopRequireDefault(_logger);
-
-	function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-
 	var Vuex = __webpack_require__(118);
 
 	module.exports = function () {
@@ -188,8 +182,7 @@ webpackJsonp([1],{
 
 	    return new Vuex.Store({
 	        state: state,
-	        mutations: mutations,
-	        middlewares: [_logger2.default]
+	        mutations: mutations
 	    });
 	};
 
