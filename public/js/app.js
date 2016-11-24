@@ -146,7 +146,7 @@ webpackJsonp([1],{
 	            eventPage.getPageDetails(function (pageDetails) {
 	                self.title = pageDetails.summary || pageDetails.title;
 	                self.url = urlService.SanitizeUrl(pageDetails.url);
-	                self.link = "[" + stringService.toTitleCase(self.title) + "](" + urlService.SanitizeUrl(pageDetails.url) + "){:target=\"_blank\"}";
+	                self.link = "[" + stringService.toTitleCase(self.title.replace("|", "-")) + "](" + urlService.SanitizeUrl(pageDetails.url) + "){:target=\"_blank\"}";
 	                done();
 	            });
 	        });
@@ -198,7 +198,7 @@ webpackJsonp([1],{
 /***/ 305:
 /***/ function(module, exports) {
 
-	module.exports = "<div id=\"addbookmark\">\r\n    <p class=\"control\">\r\n        <input class=\"input is-medium\" type=\"text\" id=\"title\" name=\"title\" size=\"50\" value=\"\" placeholder=\"Title\" v-model=\"title\"\r\n        />\r\n    </p>\r\n    <p class=\"control\">\r\n        <input class=\"input is-medium\" type=\"text\" id=\"url\" name=\"url\" size=\"50\" value=\"\" v-model=\"url\" />\r\n    </p>\r\n    <p class=\"control\">\r\n        <select id=\"type\" class=\"select is-medium\" v-model=\"category\">\r\n            <option v-for=\"category in categories\" v-bind:value=\"category\">{{category}}</option>\r\n        </select>\r\n    </p>\r\n    <p class=\"control\">\r\n        <textarea id=\"description\" name=\"description\" class=\"textarea is-medium\" v-model=\"description\"></textarea>\r\n    </p>\r\n    <p class=\"control\">\r\n        <input type=\"text\" id=\"link\" value=\"\" class=\"input is-medium\" v-model=\"link\" autofocus />\r\n    </p>\r\n    <p class=\"control\">\r\n        <input id=\"save\" type=\"submit\" value=\"Save\" class=\"button is-primary is-medium\" v-on:click=\"save\" />\r\n        <span id=\"status-display\"></span>\r\n        <span id=\"output\"></span>\r\n    </p>\r\n    </p>\r\n</div>";
+	module.exports = "<div id=\"addbookmark\">\r\n    <p class=\"control\">\r\n        <input class=\"input is-medium\" type=\"text\" id=\"title\" name=\"title\" size=\"50\" value=\"\" placeholder=\"Title\" v-model=\"title\"\r\n        />\r\n    </p>\r\n    <p class=\"control\">\r\n        <input class=\"input is-medium\" type=\"text\" id=\"url\" name=\"url\" size=\"50\" value=\"\" v-model=\"url\" />\r\n    </p>\r\n    <p class=\"control\">\r\n        <select id=\"type\" class=\"select is-medium\" v-model=\"category\">\r\n            <option v-for=\"category in categories\" v-bind:value=\"category\">{{category}}</option>\r\n        </select>\r\n    </p>\r\n    <p class=\"control\">\r\n        <textarea id=\"description\" name=\"description\" class=\"textarea is-medium\" v-model=\"description\"></textarea>\r\n    </p>\r\n    <p class=\"control\">\r\n        <input type=\"text\" id=\"link\" value=\"\" class=\"input is-medium\" v-model=\"link\" autofocus />\r\n    </p>\r\n    <p class=\"control\">\r\n        <input id=\"save\" type=\"submit\" value=\"Save\" class=\"button is-primary is-medium\" v-on:click=\"save\" />\r\n        <span id=\"status-display\"></span>\r\n        <span id=\"output\"></span>\r\n    </p>\r\n    </p>\r\n</div>\r\n<style>\r\n    html,\r\n    body {\r\n        height: 500px;\r\n        width: 400px;\r\n    }\r\n</style>";
 
 /***/ }
 

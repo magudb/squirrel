@@ -52,7 +52,7 @@ module.exports = {
             eventPage.getPageDetails(function (pageDetails) {
                 self.title = pageDetails.summary || pageDetails.title;
                 self.url = urlService.SanitizeUrl(pageDetails.url);
-                self.link = "[" + stringService.toTitleCase(self.title) + "](" + urlService.SanitizeUrl(pageDetails.url) + "){:target=\"_blank\"}"
+                self.link = "[" + stringService.toTitleCase(self.title.replace("|", "-")) + "](" + urlService.SanitizeUrl(pageDetails.url) + "){:target=\"_blank\"}"
                 done();
             });
 
