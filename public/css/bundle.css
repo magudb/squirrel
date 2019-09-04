@@ -512,18 +512,18 @@ table {
   .input:active, .textarea:active, .input:focus, .textarea:focus {
     border-color: #1fc8db;
     outline: none; }
-  .input[disabled], [disabled].textarea, .input[disabled]:hover, [disabled].textarea:hover {
+  .input[disabled], .textarea[disabled], .input[disabled]:hover, .textarea[disabled]:hover {
     background: #f5f7fa;
     border-color: #d3d6db; }
-    .input[disabled]::-moz-placeholder, [disabled].textarea::-moz-placeholder, .input[disabled]:hover::-moz-placeholder, [disabled].textarea:hover::-moz-placeholder {
+    .input[disabled]::-moz-placeholder, .textarea[disabled]::-moz-placeholder, .input[disabled]:hover::-moz-placeholder, .textarea[disabled]:hover::-moz-placeholder {
       color: rgba(34, 35, 36, 0.3); }
-    .input[disabled]::-webkit-input-placeholder, [disabled].textarea::-webkit-input-placeholder, .input[disabled]:hover::-webkit-input-placeholder, [disabled].textarea:hover::-webkit-input-placeholder {
+    .input[disabled]::-webkit-input-placeholder, .textarea[disabled]::-webkit-input-placeholder, .input[disabled]:hover::-webkit-input-placeholder, .textarea[disabled]:hover::-webkit-input-placeholder {
       color: rgba(34, 35, 36, 0.3); }
-    .input[disabled]:-moz-placeholder, [disabled].textarea:-moz-placeholder, .input[disabled]:hover:-moz-placeholder, [disabled].textarea:hover:-moz-placeholder {
+    .input[disabled]:-moz-placeholder, .textarea[disabled]:-moz-placeholder, .input[disabled]:hover:-moz-placeholder, .textarea[disabled]:hover:-moz-placeholder {
       color: rgba(34, 35, 36, 0.3); }
-    .input[disabled]:-ms-input-placeholder, [disabled].textarea:-ms-input-placeholder, .input[disabled]:hover:-ms-input-placeholder, [disabled].textarea:hover:-ms-input-placeholder {
+    .input[disabled]:-ms-input-placeholder, .textarea[disabled]:-ms-input-placeholder, .input[disabled]:hover:-ms-input-placeholder, .textarea[disabled]:hover:-ms-input-placeholder {
       color: rgba(34, 35, 36, 0.3); }
-  .input[type="search"], [type="search"].textarea {
+  .input[type="search"], .textarea[type="search"] {
     border-radius: 290486px; }
   .input.is-flat, .is-flat.textarea {
     border: none;

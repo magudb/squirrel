@@ -7,8 +7,7 @@
   "background": {
     "scripts": [
       "background.js"
-    ],
-    "persistent": false
+    ]
   },
   "content_scripts": [
     {
@@ -31,9 +30,8 @@
    "default_popup": "popup.html"
   },
   "permissions": [
-    "activeTab",
-    "identity",
-    "identity.email"
+    "activeTab"
+  
   ],
   "commands": {      
         "_execute_browser_action": {

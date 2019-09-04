@@ -18,8 +18,7 @@ module.exports = {
             /\/bindings\//,
             /\.md$/,
         ],
-        loaders: [
-            {
+        loaders: [{
                 test: /\.js$/,
                 exclude: /node_modules/,
                 loader: "babel",
@@ -39,7 +38,10 @@ module.exports = {
                 test: /\.(ttf|eot|svg|woff(2)?)(\?[a-z0-9]+)?$/,
                 loader: 'file-loader'
             },
-            { test: /\.hbs$/, loader: "handlebars-loader" },
+            {
+                test: /\.hbs$/,
+                loader: "handlebars-loader"
+            },
             {
                 test: /\.json$/,
                 loader: 'json-loader'
@@ -48,7 +50,7 @@ module.exports = {
         ]
     },
     plugins: [
-        new webpack.optimize.CommonsChunkPlugin(/* chunkName= */'vendor', /* filename= */'vendor.js', function (module) {
+        new webpack.optimize.CommonsChunkPlugin( /* chunkName= */ 'vendor', /* filename= */ 'vendor.js', function (module) {
             return module.resource && module.resource.indexOf('node_modules') !== -1;
         }),
         new webpack.ContextReplacementPlugin(/bindings$/, /^$/),
