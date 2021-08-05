@@ -3,16 +3,17 @@ var actions = require("../../store/actions.js");
 var urlService = require("../../services/url.js");
 var stringService = require("../../services/string.js");
 require("fetch-polyfill");
-console.log(urlService, stringService)
+
 module.exports = {
     template: template,
     data: () => {
         return {
-            loggedin:false,
+            loggedin: false,
             title: "",
             url: "",
             link: "",
             category: "",
+            description: "?",
             categories: [
                 "What i really liked",
                 "Ideas, Thoughts and process",
@@ -53,6 +54,7 @@ module.exports = {
                 self.title = pageDetails.summary || pageDetails.title;
                 self.url = urlService.SanitizeUrl(pageDetails.url);
                 self.link = "[" + stringService.toTitleCase(self.title.replace("|", "-")) + "](" + urlService.SanitizeUrl(pageDetails.url) + "){:target=\"_blank\"}"
+                self.description = "* " + self.title + " - " + pageDetails.url
                 done();
             });
 
@@ -63,8 +65,7 @@ module.exports = {
 
     },
     vuex: {
-        getters: {
-        },
+        getters: {},
         actions: {
             set_bookmark: actions.set_bookmark
         }

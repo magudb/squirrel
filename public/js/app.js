@@ -1,35 +1,35 @@
 webpackJsonp([1],{
 
 /***/ 0:
-/***/ function(module, exports, __webpack_require__) {
+/***/ (function(module, exports, __webpack_require__) {
 
 	"use strict";
 
-	__webpack_require__(303);
-	__webpack_require__(121);
+	__webpack_require__(302);
+	__webpack_require__(120);
 
 	var urlService = __webpack_require__(87);
 	var stringService = __webpack_require__(86);
 
 	var actions = __webpack_require__(88);
 	var Vue = __webpack_require__(307);
-	var Vuex = __webpack_require__(118);
+	var Vuex = __webpack_require__(117);
 	Vue.use(Vuex);
 	Vue.config.devtools = true;
 
 	var app = new Vue({
 	    mixins: [],
-	    store: __webpack_require__(120)(),
+	    store: __webpack_require__(119)(),
 	    el: '#squirrel',
 	    components: {
-	        bookmaker: __webpack_require__(119)
+	        bookmaker: __webpack_require__(118)
 	    }
 	});
 
-/***/ },
+/***/ }),
 
 /***/ 86:
-/***/ function(module, exports) {
+/***/ (function(module, exports) {
 
 	"use strict";
 
@@ -41,10 +41,10 @@ webpackJsonp([1],{
 	    }
 	};
 
-/***/ },
+/***/ }),
 
 /***/ 87:
-/***/ function(module, exports) {
+/***/ (function(module, exports) {
 
 	'use strict';
 
@@ -85,10 +85,10 @@ webpackJsonp([1],{
 	    }
 	};
 
-/***/ },
+/***/ }),
 
 /***/ 88:
-/***/ function(module, exports) {
+/***/ (function(module, exports) {
 
 	"use strict";
 
@@ -99,19 +99,19 @@ webpackJsonp([1],{
 	   }
 	};
 
-/***/ },
+/***/ }),
 
-/***/ 119:
-/***/ function(module, exports, __webpack_require__) {
+/***/ 118:
+/***/ (function(module, exports, __webpack_require__) {
 
 	"use strict";
 
-	var template = __webpack_require__(305);
+	var template = __webpack_require__(304);
 	var actions = __webpack_require__(88);
 	var urlService = __webpack_require__(87);
 	var stringService = __webpack_require__(86);
-	__webpack_require__(304);
-	console.log(urlService, stringService);
+	__webpack_require__(303);
+
 	module.exports = {
 	    template: template,
 	    data: function data() {
@@ -121,6 +121,7 @@ webpackJsonp([1],{
 	            url: "",
 	            link: "",
 	            category: "",
+	            description: "?",
 	            categories: ["What i really liked", "Ideas, Thoughts and process", "Software development", "C#", "Javascript", "Other Languages", "Html, CSS, CSS preprocessors and all thing designy", "Tools", "Cloud, DevOps and Security", "Containers", "Machine Learning and other very fancy buzzwords", "Videos", "Made me Laugh or Cry. "]
 	        };
 	    },
@@ -147,6 +148,7 @@ webpackJsonp([1],{
 	                self.title = pageDetails.summary || pageDetails.title;
 	                self.url = urlService.SanitizeUrl(pageDetails.url);
 	                self.link = "[" + stringService.toTitleCase(self.title.replace("|", "-")) + "](" + urlService.SanitizeUrl(pageDetails.url) + "){:target=\"_blank\"}";
+	                self.description = "* " + self.title + " - " + pageDetails.url;
 	                done();
 	            });
 	        });
@@ -160,14 +162,14 @@ webpackJsonp([1],{
 	    }
 	};
 
-/***/ },
+/***/ }),
 
-/***/ 120:
-/***/ function(module, exports, __webpack_require__) {
+/***/ 119:
+/***/ (function(module, exports, __webpack_require__) {
 
 	"use strict";
 
-	var Vuex = __webpack_require__(118);
+	var Vuex = __webpack_require__(117);
 
 	module.exports = function () {
 	    var state = {
@@ -186,20 +188,20 @@ webpackJsonp([1],{
 	    });
 	};
 
-/***/ },
+/***/ }),
 
-/***/ 303:
-/***/ function(module, exports) {
+/***/ 302:
+/***/ (function(module, exports) {
 
 	// removed by extract-text-webpack-plugin
 
-/***/ },
+/***/ }),
 
-/***/ 305:
-/***/ function(module, exports) {
+/***/ 304:
+/***/ (function(module, exports) {
 
 	module.exports = "<div id=\"addbookmark\">\r\n    <p class=\"control\">\r\n        <input class=\"input is-medium\" type=\"text\" id=\"title\" name=\"title\" size=\"50\" value=\"\" placeholder=\"Title\" v-model=\"title\"\r\n        />\r\n    </p>\r\n    <p class=\"control\">\r\n        <input class=\"input is-medium\" type=\"text\" id=\"url\" name=\"url\" size=\"50\" value=\"\" v-model=\"url\" />\r\n    </p>\r\n    <p class=\"control\">\r\n        <select id=\"type\" class=\"select is-medium\" v-model=\"category\">\r\n            <option v-for=\"category in categories\" v-bind:value=\"category\">{{category}}</option>\r\n        </select>\r\n    </p>\r\n    <p class=\"control\">\r\n        <textarea id=\"description\" name=\"description\" class=\"textarea is-medium\" v-model=\"description\"></textarea>\r\n    </p>\r\n    <p class=\"control\">\r\n        <input type=\"text\" id=\"link\" value=\"\" class=\"input is-medium\" v-model=\"link\" autofocus />\r\n    </p>\r\n    <p class=\"control\">\r\n        <input id=\"save\" type=\"submit\" value=\"Save\" class=\"button is-primary is-medium\" v-on:click=\"save\" />\r\n        <span id=\"status-display\"></span>\r\n        <span id=\"output\"></span>\r\n    </p>\r\n    </p>\r\n</div>\r\n<style>\r\n    html,\r\n    body {\r\n        height: 500px;\r\n        width: 400px;\r\n    }\r\n</style>";
 
-/***/ }
+/***/ })
 
 });
