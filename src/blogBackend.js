@@ -54,7 +54,7 @@ const CATEGORIES = [
 
 // Helper functions
 function formatLink(link) {
-  const displayText = ((link.selectedText && link.selectedText.trim()) || link.title).replace(/\|/g, '-');
+  const displayText = ((link.description && link.description.trim()) || (link.selectedText && link.selectedText.trim()) || link.title).replace(/\|/g, '-');
   return `- [${displayText}](${link.url}){:target="_blank"}`;
 }
 
