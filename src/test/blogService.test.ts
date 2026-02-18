@@ -195,4 +195,43 @@ describe('BlogService', () => {
       expect(result[0]).toHaveProperty('name');
     });
   });
+
+  describe('analyzeLink', () => {
+    it('should call backend analyze-link endpoint and return result', async () => {
+      const mockResponse = { category: 'development', description: 'A guide to testing practices' };
+      vi.mocked(global.fetch).mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(mockResponse),
+      } as Response);
+
+      const result = await BlogService.analyzeLink('https://example.com', 'Test Article', 'some selected text');
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        'http://localhost:3001/api/analyze-link',
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: 'https://example.com', title: 'Test Article', selectedText: 'some selected text' }),
+        })
+      );
+      expect(result).toEqual(mockResponse);
+    });
+
+    it('should return null when backend returns non-ok response', async () => {
+      vi.mocked(global.fetch).mockResolvedValue({
+        ok: false,
+        status: 503,
+      } as Response);
+
+      const result = await BlogService.analyzeLink('https://example.com', 'Test');
+      expect(result).toBeNull();
+    });
+
+    it('should return null when fetch throws', async () => {
+      vi.mocked(global.fetch).mockRejectedValue(new Error('Network error'));
+
+      const result = await BlogService.analyzeLink('https://example.com', 'Test');
+      expect(result).toBeNull();
+    });
+  });
 });

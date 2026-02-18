@@ -1,4 +1,4 @@
-import { Category, Link, BlogPost } from '../types';
+import { Category, Link, BlogPost, AnalyzeLinkResponse } from '../types';
 
 const BACKEND_URL = 'http://localhost:3001';
 
@@ -19,6 +19,22 @@ export class BlogService {
         { id: "tools", name: "Tools and things from Github", anchor: "tools" },
         { id: "ai", name: "AI, LLM & Machine Learning", anchor: "ai" }
       ];
+    }
+  }
+
+  static async analyzeLink(url: string, title: string, selectedText?: string): Promise<AnalyzeLinkResponse | null> {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/analyze-link`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, title, selectedText }),
+      });
+
+      if (!response.ok) return null;
+      return await response.json();
+    } catch (error) {
+      console.error('Error analyzing link:', error);
+      return null;
     }
   }
 
