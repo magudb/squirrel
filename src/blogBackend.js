@@ -6,6 +6,7 @@
  */
 
 import fs from 'fs/promises';
+import os from 'os';
 import path from 'path';
 import { spawn } from 'child_process';
 import express from 'express';
@@ -18,8 +19,9 @@ const PORT = 3001;
 app.use(cors());
 app.use(express.json());
 
-// Configuration
-const DRAFTS_DIR = '/home/mlu/Documents/project/magudb.github.io/_drafts';
+// Configuration — override via env on a per-machine basis.
+const DRAFTS_DIR = process.env.SQUIRREL_DRAFTS_DIR
+  || path.join(os.homedir(), 'Documents/projects/magudb.github.io/_drafts');
 const CATEGORIES = [
   {
     id: "favorites",
@@ -86,8 +88,8 @@ async function fetchPageContent(url) {
   return text.replace(/\s+/g, ' ').trim().slice(0, 3000);
 }
 
-const CLAUDE_BIN = '/home/mlu/.local/bin/claude';
-const CLAUDE_MODEL = 'sonnet';
+const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
+const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'sonnet';
 
 async function analyzeWithClaude(url, title, pageContent, selectedText) {
   const categoryList = CATEGORIES.map(c => `- ${c.id}: ${c.name}`).join('\n');

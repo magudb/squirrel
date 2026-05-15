@@ -10,6 +10,8 @@ ExecStart=/home/mlu/.local/share/mise/installs/node/22.19.0/bin/node src/blogBac
 Restart=always
 RestartSec=10
 Environment=NODE_ENV=production
+Environment=SQUIRREL_DRAFTS_DIR=/home/mlu/Documents/project/magudb.github.io/_drafts
+Environment=CLAUDE_BIN=/home/mlu/.local/bin/claude
 
 # Logging
 StandardOutput=journal
