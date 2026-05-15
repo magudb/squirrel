@@ -1,0 +1,20 @@
+[Unit]
+Description=Squirrel Blog Backend Service
+After=network.target
+
+[Service]
+Type=simple
+User=mlu
+WorkingDirectory=/home/mlu/Documents/project/squirrel
+ExecStart=/home/mlu/.local/share/mise/installs/node/22.19.0/bin/node src/blogBackend.js
+Restart=always
+RestartSec=10
+Environment=NODE_ENV=production
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=squirrel-backend
+
+[Install]
+WantedBy=multi-user.target
