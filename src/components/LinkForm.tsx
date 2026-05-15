@@ -28,8 +28,8 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
   const [description, setDescription] = useState('');
   const { analyze, data: analyzeResult, isAnalyzing } = useAnalyzeLink();
 
-  const { categories, blogFiles, isLoading, error } = useBlogData();
-  const { addLink, isLoading: isAddingLink } = useBlogMutation();
+  const { categories, blogFiles, isLoading, errorMessage: dataError, backendDown, refetch } = useBlogData();
+  const { addLink, isLoading: isAddingLink, errorMessage: mutationError, reset: resetMutation } = useBlogMutation();
 
   useEffect(() => {
     if (tabInfo) {
@@ -40,21 +40,18 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
   }, [tabInfo]);
 
   useEffect(() => {
-    // Auto-select first category if none selected
     if (categories.length > 0 && !selectedCategory) {
       setSelectedCategory(categories[0]);
     }
   }, [categories, selectedCategory]);
 
   useEffect(() => {
-    // Auto-select first blog file if none selected
     if (blogFiles.length > 0 && !selectedBlogFile) {
       setSelectedBlogFile(blogFiles[0]);
     }
   }, [blogFiles, selectedBlogFile]);
 
   useEffect(() => {
-    // Auto-trigger AI analysis when we have a valid URL
     if (tabInfo?.url && tabInfo.url.startsWith('http')) {
       analyze({
         url: tabInfo.url,
@@ -65,7 +62,6 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
   }, [tabInfo, analyze]);
 
   useEffect(() => {
-    // Apply AI suggestions when they arrive
     if (analyzeResult) {
       const suggestedCategory = categories.find(c => c.id === analyzeResult.category);
       if (suggestedCategory) {
@@ -80,9 +76,11 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setValidationError(null);
+    resetMutation();
 
     if (!url || !title || !selectedCategory || !selectedBlogFile) {
-      setValidationError('Please fill in all required fields');
+      const missing = [!url && 'url', !title && 'title', !selectedCategory && 'category', !selectedBlogFile && 'blogFile'].filter(Boolean);
+      setValidationError(`Missing: ${missing.join(', ')}`);
       return;
     }
 
@@ -112,28 +110,63 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
     );
   }
 
-  if (error) {
+  if (backendDown) {
     return (
       <div className="p-4">
         <div className="bg-red-50 border border-red-200 rounded-md p-4">
-          <div className="flex items-center">
-            <svg className="w-5 h-5 text-red-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="flex items-start">
+            <svg className="w-5 h-5 text-red-400 mr-2 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <p className="text-sm text-red-700">Failed to load data. Please try again later.</p>
+            <div>
+              <p className="text-sm font-medium text-red-800">Backend not reachable</p>
+              <p className="text-xs text-red-600 mt-1">
+                The squirrel-backend service doesn't seem to be running.
+              </p>
+              <p className="text-xs text-gray-500 mt-2 font-mono">
+                sudo systemctl restart squirrel-backend
+              </p>
+              <button
+                onClick={refetch}
+                className="mt-3 text-sm text-red-700 underline hover:text-red-900"
+              >
+                Retry connection
+              </button>
+            </div>
           </div>
         </div>
       </div>
     );
   }
 
+  // Show a non-blocking warning if there's a data fetch error but we have some data
+  const showDataWarning = dataError && !backendDown;
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4 p-4">
+      {/* Validation error */}
       {validationError && (
         <div className="bg-red-50 border border-red-200 rounded-md p-3">
           <p className="text-sm text-red-700">{validationError}</p>
         </div>
       )}
+
+      {/* Mutation error (failed to add link) */}
+      {mutationError && (
+        <div className="bg-red-50 border border-red-200 rounded-md p-3">
+          <p className="text-sm font-medium text-red-800">Failed to add link</p>
+          <p className="text-xs text-red-600 mt-1">{mutationError}</p>
+          <p className="text-xs text-gray-500 mt-1">The link was saved locally. You can retry.</p>
+        </div>
+      )}
+
+      {/* Data warning (partial failure) */}
+      {showDataWarning && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
+          <p className="text-xs text-yellow-700">{dataError}</p>
+        </div>
+      )}
+
       <div>
         <label htmlFor="url" className="block text-sm font-medium text-gray-700 mb-1">
           URL *

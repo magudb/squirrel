@@ -7,6 +7,7 @@
 
 import fs from 'fs/promises';
 import path from 'path';
+import { spawn } from 'child_process';
 import express from 'express';
 import cors from 'cors';
 
@@ -85,44 +86,100 @@ async function fetchPageContent(url) {
   return text.replace(/\s+/g, ' ').trim().slice(0, 3000);
 }
 
-async function analyzeWithOllama(url, title, pageContent, selectedText) {
+const CLAUDE_BIN = '/home/mlu/.local/bin/claude';
+const CLAUDE_MODEL = 'sonnet';
+
+async function analyzeWithClaude(url, title, pageContent, selectedText) {
   const categoryList = CATEGORIES.map(c => `- ${c.id}: ${c.name}`).join('\n');
 
-  const prompt = `Given these categories:
+  const prompt = `You are writing link descriptions for a curated tech newsletter from the perspective of a CTO and hands-on developer with almost two decades in tech. The curator builds useful software, helps teams do their best work, and shares what they learn — code, tools, and hard-won mistakes — so others can move faster.
+
+The tone is curious, practical, and direct. Write as someone who has been in the trenches — leading teams, shipping products, and still learning every day. Descriptions should feel like a personal recommendation from a peer, not a summary from a robot.
+
+## Categories
+
+Pick the single best-fit category from this list:
 ${categoryList}
 
-Analyze this article and respond with JSON only:
+Category guidance:
+- "favorites": Only for truly exceptional, must-read articles that changed how you think or work
+- "agile": Leadership, team dynamics, product management, agile practices, organizational culture
+- "development": Software architecture, coding practices, design patterns, programming languages, software craftsmanship
+- "devops": CI/CD, infrastructure, cloud, monitoring, observability, security, reliability, platform engineering
+- "tools": Developer tools, CLI utilities, GitHub projects, open source libraries, productivity tools
+- "ai": Artificial intelligence, machine learning, LLMs, AI coding assistants, AI strategy
+
+## Article
+
 Title: ${title}
 URL: ${url}
-${selectedText ? `Selected text: ${selectedText}` : ''}
-Content: ${pageContent}
+${selectedText ? `Highlighted by reader: ${selectedText}\n` : ''}
+${pageContent ? `Article content:\n${pageContent}` : ''}
 
-Respond with exactly this JSON format, no other text:
-{"category": "<category_id>", "description": "<1-2 sentence description for a tech blog link list>"}`;
+## Task
 
-  const response = await fetch('http://localhost:11434/api/generate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'qwen3:14b',
-      prompt,
-      stream: false,
-      format: 'json',
-    }),
-    signal: AbortSignal.timeout(30000),
+1. Pick the single most relevant category ID from the list above.
+2. Write a concise description (1-2 sentences, max 30 words) in the curator's voice. Focus on the practical takeaway — what will the reader gain? Write like you're recommending this to a fellow developer or tech lead over coffee.
+
+IMPORTANT: Respond with ONLY a raw JSON object, no markdown, no explanation, no code fences:
+{"category": "<category_id>", "description": "<your description>"}`;
+
+  const t0 = performance.now();
+  const env = { ...process.env };
+  delete env.CLAUDECODE;
+
+  const result = await new Promise((resolve, reject) => {
+    const proc = spawn(CLAUDE_BIN, [
+      '-p',
+      '--model', CLAUDE_MODEL,
+      '--output-format', 'json',
+      '--no-session-persistence',
+      '--append-system-prompt', 'You MUST respond with only a raw JSON object. No markdown, no code fences, no explanation.',
+    ], { env, timeout: 120000 });
+
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.on('data', (d) => { stdout += d; });
+    proc.stderr.on('data', (d) => { stderr += d; });
+    proc.stdin.write(prompt);
+    proc.stdin.end();
+
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        console.error(`[claude] exit=${code} stderr=${stderr}`);
+        reject(new Error(`claude exited ${code}: ${stderr.slice(0, 200)}`));
+      } else {
+        if (stderr) console.warn(`[claude] stderr: ${stderr.slice(0, 200)}`);
+        resolve(stdout);
+      }
+    });
+    proc.on('error', reject);
   });
+  const t1 = performance.now();
 
-  if (!response.ok) {
-    throw new Error(`Ollama returned ${response.status}`);
+  // --output-format json wraps result in {"type":"result",...,"result":"<actual text>"}
+  const envelope = JSON.parse(result);
+  const resultText = envelope.result || result;
+  console.log(`[timing] analyzeWithClaude: ${(t1 - t0).toFixed(0)}ms, cost=$${envelope.total_cost_usd || '?'}`);
+  console.log(`[claude] raw result: ${resultText.slice(0, 300)}`);
+
+  // Try direct JSON parse first, then extract from markdown code fences
+  let parsed;
+  try {
+    parsed = JSON.parse(resultText);
+  } catch {
+    const jsonMatch = resultText.match(/\{[\s\S]*"category"[\s\S]*"description"[\s\S]*\}/);
+    if (jsonMatch) {
+      parsed = JSON.parse(jsonMatch[0]);
+    } else {
+      throw new Error(`Could not parse Claude response as JSON: ${resultText.slice(0, 200)}`);
+    }
   }
-
-  const data = await response.json();
-  const parsed = JSON.parse(data.response);
 
   // Validate category exists
   const validCategory = CATEGORIES.find(c => c.id === parsed.category);
   if (!validCategory) {
-    parsed.category = CATEGORIES[0].id; // Default to first category
+    parsed.category = CATEGORIES[0].id;
   }
 
   return {
@@ -183,13 +240,14 @@ async function addLinkToBlogFile(link, blogFilePath) {
       throw new Error('Link already exists in blog');
     }
 
-    // Find the section for the category
-    const anchorPattern = `<a name="${category.anchor}"></a>`;
-    const anchorIndex = content.indexOf(anchorPattern);
-    
-    if (anchorIndex === -1) {
+    // Find the section for the category — match anchor regardless of inner text
+    const anchorRegex = new RegExp(`<a\\s+name=["']${category.anchor}["'][^>]*>(?:[^<]*)</a>`);
+    const anchorMatch = content.match(anchorRegex);
+
+    if (!anchorMatch) {
       throw new Error(`Category section not found: ${category.name}`);
     }
+    const anchorIndex = content.indexOf(anchorMatch[0]);
 
     // Find where to insert the link
     const sectionStart = anchorIndex;
@@ -250,6 +308,7 @@ app.get('/api/blog-files', async (req, res) => {
 });
 
 app.post('/api/analyze-link', async (req, res) => {
+  const reqStart = performance.now();
   try {
     const { url, title, selectedText } = req.body;
 
@@ -259,21 +318,21 @@ app.post('/api/analyze-link', async (req, res) => {
 
     // Fetch page content (gracefully degrade if it fails)
     let pageContent = '';
+    const fetchStart = performance.now();
     try {
       pageContent = await fetchPageContent(url);
+      console.log(`[timing] fetchPageContent: ${(performance.now() - fetchStart).toFixed(0)}ms, ${pageContent.length} chars`);
     } catch (err) {
-      console.warn(`Could not fetch page content for ${url}:`, err.message);
+      console.warn(`[timing] fetchPageContent: failed after ${(performance.now() - fetchStart).toFixed(0)}ms — ${err.message}`);
     }
 
-    // Analyze with Ollama
-    const result = await analyzeWithOllama(url, title, pageContent, selectedText);
+    // Analyze with Claude
+    const result = await analyzeWithClaude(url, title, pageContent, selectedText);
+    console.log(`[timing] /api/analyze-link total: ${(performance.now() - reqStart).toFixed(0)}ms`);
     res.json(result);
   } catch (error) {
-    console.error('Error in analyze-link endpoint:', error);
-    res.status(503).json({
-      error: 'AI analysis unavailable',
-      message: error.message,
-    });
+    console.warn(`[timing] /api/analyze-link failed after ${(performance.now() - reqStart).toFixed(0)}ms:`, error.message);
+    res.json({ category: null, description: null });
   }
 });
 

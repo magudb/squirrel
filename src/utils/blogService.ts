@@ -1,72 +1,81 @@
 import { Category, Link, BlogPost, AnalyzeLinkResponse } from '../types';
 
 const BACKEND_URL = 'http://localhost:3001';
+const FETCH_TIMEOUT_MS = 5000;
+
+// Custom error for backend connectivity issues
+export class BackendError extends Error {
+  constructor(message: string, public readonly statusCode?: number) {
+    super(message);
+    this.name = 'BackendError';
+  }
+}
+
+async function fetchWithTimeout(url: string, options?: RequestInit, timeoutMs = FETCH_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    return response;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new BackendError('Backend not responding (timeout)');
+    }
+    throw new BackendError('Backend not reachable — is the service running?');
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 export class BlogService {
-  static async getCategories(): Promise<Category[]> {
+  static async checkHealth(): Promise<boolean> {
     try {
-      const response = await fetch(`${BACKEND_URL}/api/categories`);
-      if (!response.ok) throw new Error('Failed to fetch categories');
-      return await response.json();
-    } catch (error) {
-      console.error('Error fetching categories, using fallback:', error);
-      // Fallback categories if backend is not available
-      return [
-        { id: "favorites", name: "My favorites", anchor: "favorites" },
-        { id: "agile", name: "Agile, Leadership and Product", anchor: "agile" },
-        { id: "development", name: "Architecture, Development & Software development practices", anchor: "development" },
-        { id: "devops", name: "DevOps, Observability & Security", anchor: "devops" },
-        { id: "tools", name: "Tools and things from Github", anchor: "tools" },
-        { id: "ai", name: "AI, LLM & Machine Learning", anchor: "ai" }
-      ];
+      const response = await fetchWithTimeout(`${BACKEND_URL}/health`);
+      return response.ok;
+    } catch {
+      return false;
     }
+  }
+
+  static async getCategories(): Promise<Category[]> {
+    const response = await fetchWithTimeout(`${BACKEND_URL}/api/categories`);
+    if (!response.ok) {
+      throw new BackendError(`Failed to fetch categories (${response.status})`);
+    }
+    return await response.json();
   }
 
   static async analyzeLink(url: string, title: string, selectedText?: string): Promise<AnalyzeLinkResponse | null> {
     try {
-      const response = await fetch(`${BACKEND_URL}/api/analyze-link`, {
+      const response = await fetchWithTimeout(`${BACKEND_URL}/api/analyze-link`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url, title, selectedText }),
-      });
+      }, 30000);
 
       if (!response.ok) return null;
-      return await response.json();
-    } catch (error) {
-      console.error('Error analyzing link:', error);
+      const data = await response.json();
+      // Backend returns { category: null, description: null } on analysis failure
+      if (!data.category && !data.description) return null;
+      return data;
+    } catch {
+      // AI analysis is non-critical, return null silently
       return null;
     }
   }
 
   static async findCuratedInsightsFiles(): Promise<BlogPost[]> {
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/blog-files`);
-      if (!response.ok) throw new Error('Failed to fetch blog files');
-      return await response.json();
-    } catch (error) {
-      console.error('Error fetching blog files, using fallback:', error);
-      // Fallback files if backend is not available
-      return [
-        {
-          path: '/home/mlu/Documents/project/magudb.github.io/_drafts/2025-06-20-on AI.md',
-          filename: '2025-06-20-on AI.md',
-          title: 'The Paradox of AI Coding Assistants'
-        },
-        {
-          path: '/home/mlu/Documents/project/magudb.github.io/_drafts/2025-08-31-Tech Digest: Fall 2025 Essential Reads for Tech Professionals.md',
-          filename: '2025-08-31-Tech Digest: Fall 2025 Essential Reads for Tech Professionals.md',
-          title: 'Tech Digest: Fall 2025 Essential Reads for Tech Professionals'
-        }
-      ];
+    const response = await fetchWithTimeout(`${BACKEND_URL}/api/blog-files`);
+    if (!response.ok) {
+      throw new BackendError(`Failed to fetch blog files (${response.status})`);
     }
+    return await response.json();
   }
 
   static formatLink(link: Link): string {
-    // Sanitize markdown special characters to prevent injection
     const sanitizeMarkdown = (text: string): string => {
       return text.replace(/\|/g, '-').replace(/[\[\]()]/g, '\\$&');
     };
-    // Encode parentheses in URLs to prevent markdown from breaking
     const encodeUrlParens = (url: string): string => {
       return url.replace(/\(/g, '%28').replace(/\)/g, '%29');
     };
@@ -75,44 +84,21 @@ export class BlogService {
     return `- [${displayText}](${sanitizedUrl}){:target="_blank"}`;
   }
 
-  static async addLinkToBlog(link: Link, blogFile: BlogPost): Promise<boolean> {
-    try {
-      // Try to use backend API first
-      const response = await fetch(`${BACKEND_URL}/api/add-link`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ link, blogFile })
-      });
+  static async addLinkToBlog(link: Link, blogFile: BlogPost): Promise<void> {
+    const response = await fetchWithTimeout(`${BACKEND_URL}/api/add-link`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ link, blogFile }),
+    });
 
-      if (response.ok) {
-        const result = await response.json();
-        return result.success;
-      } else {
-        console.warn('Backend API failed, falling back to background script');
-        // Fallback to background script
-        const bgResponse = await chrome.runtime.sendMessage({
-          action: 'addLinkToBlog',
-          link,
-          blogFile
-        });
-        return bgResponse.success;
-      }
-    } catch (error) {
-      console.error('Error adding link to blog:', error);
-      try {
-        // Final fallback to background script
-        const bgResponse = await chrome.runtime.sendMessage({
-          action: 'addLinkToBlog',
-          link,
-          blogFile
-        });
-        return bgResponse.success;
-      } catch (bgError) {
-        console.error('Background script also failed:', bgError);
-        return false;
-      }
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new BackendError(body.error || `Failed to add link (${response.status})`, response.status);
+    }
+
+    const result = await response.json();
+    if (!result.success) {
+      throw new BackendError(result.error || 'Backend reported failure');
     }
   }
 

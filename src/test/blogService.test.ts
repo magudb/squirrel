@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { BlogService } from '../utils/blogService';
+import { BlogService, BackendError } from '../utils/blogService';
 
 describe('BlogService', () => {
   beforeEach(() => {
@@ -186,13 +186,19 @@ describe('BlogService', () => {
       expect(result).toEqual(mockCategories);
     });
 
-    it('should return fallback categories when backend fails', async () => {
+    it('should throw BackendError when backend fails', async () => {
       vi.mocked(global.fetch).mockRejectedValue(new Error('Network error'));
 
-      const result = await BlogService.getCategories();
-      expect(result.length).toBeGreaterThan(0);
-      expect(result[0]).toHaveProperty('id');
-      expect(result[0]).toHaveProperty('name');
+      await expect(BlogService.getCategories()).rejects.toThrow(BackendError);
+    });
+
+    it('should throw BackendError when backend returns non-ok response', async () => {
+      vi.mocked(global.fetch).mockResolvedValue({
+        ok: false,
+        status: 500,
+      } as Response);
+
+      await expect(BlogService.getCategories()).rejects.toThrow(BackendError);
     });
   });
 
