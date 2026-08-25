@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useBlogData } from '../hooks/useBlogData';
 import { useBlogMutation } from '../hooks/useBlogMutation';
 import { useAnalyzeLink } from '../hooks/useAnalyzeLink';
-import { TabInfo, Category, BlogPost } from '../types';
+import { TabInfo } from '../types';
 
 interface LinkFormProps {
   tabInfo?: TabInfo;
@@ -22,14 +22,21 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
   const [url, setUrl] = useState(tabInfo?.url || '');
   const [title, setTitle] = useState(tabInfo?.title || '');
   const [selectedText, setSelectedText] = useState(tabInfo?.selectedText || '');
-  const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
-  const [selectedBlogFile, setSelectedBlogFile] = useState<BlogPost | null>(null);
+  // Selections are held as ids, not objects, so the chosen entity can be derived
+  // during render instead of kept in sync by effects.
+  const [categoryId, setCategoryId] = useState('');
+  const [blogFilePath, setBlogFilePath] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
   const [description, setDescription] = useState('');
   const { analyze, data: analyzeResult, isAnalyzing } = useAnalyzeLink();
 
   const { categories, blogFiles, isLoading, errorMessage: dataError, backendDown, refetch } = useBlogData();
   const { addLink, isLoading: isAddingLink, errorMessage: mutationError, reset: resetMutation } = useBlogMutation();
+
+  // Fall back to the first option so the form has a sensible default as soon as
+  // the lists arrive, without an effect to seed it.
+  const selectedCategory = categories.find(c => c.id === categoryId) ?? categories[0] ?? null;
+  const selectedBlogFile = blogFiles.find(f => f.path === blogFilePath) ?? blogFiles[0] ?? null;
 
   useEffect(() => {
     if (tabInfo) {
@@ -38,18 +45,6 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
       setSelectedText(tabInfo.selectedText || '');
     }
   }, [tabInfo]);
-
-  useEffect(() => {
-    if (categories.length > 0 && !selectedCategory) {
-      setSelectedCategory(categories[0]);
-    }
-  }, [categories, selectedCategory]);
-
-  useEffect(() => {
-    if (blogFiles.length > 0 && !selectedBlogFile) {
-      setSelectedBlogFile(blogFiles[0]);
-    }
-  }, [blogFiles, selectedBlogFile]);
 
   useEffect(() => {
     if (tabInfo?.url && tabInfo.url.startsWith('http')) {
@@ -61,17 +56,15 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
     }
   }, [tabInfo, analyze]);
 
+  // Apply the AI suggestion exactly once. Re-running this (for instance after a
+  // background refetch) would overwrite edits the user has since made.
+  const suggestionApplied = useRef(false);
   useEffect(() => {
-    if (analyzeResult) {
-      const suggestedCategory = categories.find(c => c.id === analyzeResult.category);
-      if (suggestedCategory) {
-        setSelectedCategory(suggestedCategory);
-      }
-      if (analyzeResult.description) {
-        setDescription(analyzeResult.description);
-      }
-    }
-  }, [analyzeResult, categories]);
+    if (!analyzeResult || suggestionApplied.current) return;
+    suggestionApplied.current = true;
+    if (analyzeResult.category) setCategoryId(analyzeResult.category);
+    if (analyzeResult.description) setDescription(analyzeResult.description);
+  }, [analyzeResult]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,7 +83,7 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
     }
 
     const link = {
-      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      id: crypto.randomUUID(),
       url,
       title,
       selectedText: selectedText.trim() || undefined,
@@ -104,8 +97,9 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center p-8">
+      <div className="flex items-center justify-center p-8" role="status">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <span className="sr-only">Loading categories and blog files…</span>
       </div>
     );
   }
@@ -113,9 +107,9 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
   if (backendDown) {
     return (
       <div className="p-4">
-        <div className="bg-red-50 border border-red-200 rounded-md p-4">
+        <div className="bg-red-50 border border-red-200 rounded-md p-4" role="alert">
           <div className="flex items-start">
-            <svg className="w-5 h-5 text-red-400 mr-2 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg aria-hidden="true" className="w-5 h-5 text-red-400 mr-2 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <div>
@@ -146,14 +140,14 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
     <form onSubmit={handleSubmit} className="space-y-4 p-4">
       {/* Validation error */}
       {validationError && (
-        <div className="bg-red-50 border border-red-200 rounded-md p-3">
+        <div className="bg-red-50 border border-red-200 rounded-md p-3" role="alert">
           <p className="text-sm text-red-700">{validationError}</p>
         </div>
       )}
 
       {/* Mutation error (failed to add link) */}
       {mutationError && (
-        <div className="bg-red-50 border border-red-200 rounded-md p-3">
+        <div className="bg-red-50 border border-red-200 rounded-md p-3" role="alert">
           <p className="text-sm font-medium text-red-800">Failed to add link</p>
           <p className="text-xs text-red-600 mt-1">{mutationError}</p>
           <p className="text-xs text-gray-500 mt-1">The link was saved locally. You can retry.</p>
@@ -162,7 +156,7 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
 
       {/* Data warning (partial failure) */}
       {showDataWarning && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
+        <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3" role="alert">
           <p className="text-xs text-yellow-700">{dataError}</p>
         </div>
       )}
@@ -213,7 +207,10 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
 
       <div>
         <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
-          Description {isAnalyzing && <span className="text-blue-500 text-xs ml-1">(AI analyzing...)</span>}
+          Description
+          <span className="text-blue-500 text-xs ml-1" aria-live="polite">
+            {isAnalyzing ? '(AI analyzing…)' : ''}
+          </span>
         </label>
         <textarea
           id="description"
@@ -224,7 +221,10 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
             isAnalyzing ? 'border-blue-300 bg-blue-50 animate-pulse' : 'border-gray-300'
           }`}
           placeholder={isAnalyzing ? 'AI is generating a description...' : 'Short description for the blog (used as link text)'}
-          disabled={isAnalyzing}
+          // readOnly rather than disabled: still focusable and reachable by tab
+          // while the suggestion is in flight.
+          readOnly={isAnalyzing}
+          aria-busy={isAnalyzing}
         />
       </div>
 
@@ -235,10 +235,7 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
         <select
           id="category"
           value={selectedCategory?.id || ''}
-          onChange={(e) => {
-            const category = categories.find(c => c.id === e.target.value);
-            setSelectedCategory(category || null);
-          }}
+          onChange={(e) => setCategoryId(e.target.value)}
           className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
             isAnalyzing ? 'border-blue-300 bg-blue-50' : 'border-gray-300'
           }`}
@@ -260,10 +257,7 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
         <select
           id="blogFile"
           value={selectedBlogFile?.path || ''}
-          onChange={(e) => {
-            const blogFile = blogFiles.find(f => f.path === e.target.value);
-            setSelectedBlogFile(blogFile || null);
-          }}
+          onChange={(e) => setBlogFilePath(e.target.value)}
           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           required
         >

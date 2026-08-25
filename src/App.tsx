@@ -102,8 +102,13 @@ function AppContent() {
       </div>
 
       {/* Navigation */}
-      <div className="flex border-b">
+      <div className="flex border-b" role="tablist" aria-label="Squirrel sections">
         <button
+          type="button"
+          role="tab"
+          id="tab-add"
+          aria-selected={activeTab === 'add'}
+          aria-controls="panel-add"
           onClick={() => setActiveTab('add')}
           className={`flex-1 py-3 px-4 text-center font-medium transition-colors ${
             activeTab === 'add'
@@ -114,6 +119,11 @@ function AppContent() {
           Add Link
         </button>
         <button
+          type="button"
+          role="tab"
+          id="tab-saved"
+          aria-selected={activeTab === 'saved'}
+          aria-controls="panel-saved"
           onClick={() => setActiveTab('saved')}
           className={`flex-1 py-3 px-4 text-center font-medium transition-colors ${
             activeTab === 'saved'
@@ -128,9 +138,13 @@ function AppContent() {
       {/* Content */}
       <div>
         {activeTab === 'add' ? (
-          <LinkForm tabInfo={tabInfo ?? undefined} />
+          <div role="tabpanel" id="panel-add" aria-labelledby="tab-add">
+            <LinkForm tabInfo={tabInfo ?? undefined} />
+          </div>
         ) : (
-          <SavedLinks />
+          <div role="tabpanel" id="panel-saved" aria-labelledby="tab-saved">
+            <SavedLinks />
+          </div>
         )}
       </div>
 
@@ -141,7 +155,7 @@ function AppContent() {
         </p>
       </div>
 
-      {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
+      {import.meta.env.DEV ? <ReactQueryDevtools initialIsOpen={false} /> : null}
     </div>
   );
 }

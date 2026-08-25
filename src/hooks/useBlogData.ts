@@ -1,5 +1,14 @@
+import { useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { BlogService } from '../utils/blogService';
+import { Category, BlogPost, Link } from '../types';
+
+// Hoisted so the `data || EMPTY` fallbacks keep a stable identity while a query
+// is loading or errored. Consumers use these arrays as effect dependencies, and
+// a fresh [] per render would re-run those effects on every render.
+const EMPTY_CATEGORIES: Category[] = [];
+const EMPTY_BLOG_FILES: BlogPost[] = [];
+const EMPTY_LINKS: Link[] = [];
 
 export const useBlogData = () => {
   const categoriesQuery = useQuery({
@@ -33,17 +42,21 @@ export const useBlogData = () => {
     ? 'Backend not reachable — is the squirrel-backend service running?'
     : categoriesQuery.error?.message || blogFilesQuery.error?.message || null;
 
+  const refetchCategories = categoriesQuery.refetch;
+  const refetchBlogFiles = blogFilesQuery.refetch;
+  const refetch = useCallback(() => {
+    refetchCategories();
+    refetchBlogFiles();
+  }, [refetchCategories, refetchBlogFiles]);
+
   return {
-    categories: categoriesQuery.data || [],
-    blogFiles: blogFilesQuery.data || [],
-    savedLinks: savedLinksQuery.data || [],
+    categories: categoriesQuery.data || EMPTY_CATEGORIES,
+    blogFiles: blogFilesQuery.data || EMPTY_BLOG_FILES,
+    savedLinks: savedLinksQuery.data || EMPTY_LINKS,
     isLoading: categoriesQuery.isLoading || blogFilesQuery.isLoading,
     error: categoriesQuery.error || blogFilesQuery.error || savedLinksQuery.error,
     errorMessage,
     backendDown,
-    refetch: () => {
-      categoriesQuery.refetch();
-      blogFilesQuery.refetch();
-    },
+    refetch,
   };
 };
