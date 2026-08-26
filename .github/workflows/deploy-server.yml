@@ -1,0 +1,116 @@
+name: Deploy server
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'server/**'
+      - '.github/workflows/deploy-server.yml'
+  workflow_dispatch:
+
+# Vercel deployments are not safe to overlap: two runs racing means the later
+# push can land first. Queue instead of cancelling, so an in-flight deploy is
+# never abandoned half-done.
+concurrency:
+  group: deploy-server
+  cancel-in-progress: false
+
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+  VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  deploy:
+    name: Deploy to production
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # Pinned, not @latest: the CLI decides how the project is built, and a
+      # release mid-week should not change that without us choosing it.
+      - run: npm install --global vercel@59.5.0
+
+      # Every Vercel step below runs from the REPOSITORY ROOT — never from
+      # server/. The project's Root Directory is "server", and the CLI joins
+      # that onto the working directory:
+      #   workPath = join(cwd, project.settings.rootDirectory || '.')
+      # Running these in server/ resolves to server/server, which builds zero
+      # functions, registers zero crons, and still exits 0. A green tick on an
+      # empty deployment is the failure mode this comment exists to prevent.
+      - name: Pull project settings
+        run: vercel pull --yes --environment=production
+
+      - name: Build
+        run: vercel build --prod
+
+      - name: Verify the build actually produced functions
+        run: |
+          count=$(find .vercel/output/functions -maxdepth 2 -name '*.func' -type d | wc -l)
+          echo "functions built: $count"
+          if [ "$count" -eq 0 ]; then
+            echo "::error::Build produced no functions. Check that Root Directory is 'server' and that the CLI ran from the repo root."
+            exit 1
+          fi
+          # Crons only attach to production deployments, and a typo'd path 404s
+          # forever without surfacing anywhere.
+          node -e "
+            const c = require('./.vercel/output/config.json');
+            const crons = c.crons ?? [];
+            console.log('crons registered:', JSON.stringify(crons));
+            if (crons.length === 0) { console.error('::warning::No cron registered — the daily flush safety net will not run.'); }
+          "
+
+      - name: Deploy
+        id: deploy
+        run: |
+          url=$(vercel deploy --prebuilt --prod)
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Deployed to $url"
+
+      - name: Smoke test
+        run: |
+          url="${{ steps.deploy.outputs.url }}"
+          code=$(curl -s -o /tmp/health.json -w '%{http_code}' --max-time 30 "$url/api/health")
+          cat /tmp/health.json || true
+          echo
+          if [ "$code" != "200" ]; then
+            echo "::error::/api/health returned $code — deployment is live but not healthy."
+            exit 1
+          fi
+          # /api/health is the only unauthenticated route; everything else must
+          # reject an anonymous caller. A 200 here would mean auth is not wired.
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$url/api/status")
+          if [ "$code" != "401" ]; then
+            echo "::error::/api/status returned $code for an unauthenticated request, expected 401."
+            exit 1
+          fi
+          echo "health ok, auth enforced"

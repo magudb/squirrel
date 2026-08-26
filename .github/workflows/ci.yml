@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  extension:
+    name: Extension
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run type-check
+      - run: npx vitest run
+      # The build is the real check here: a manifest or CSP mistake only shows
+      # up in dist/, which is what Chrome actually loads.
+      - run: npm run build
+      - name: Check the built service worker's import resolves
+        run: |
+          test -f dist/squirrelApi.js || { echo "dist/squirrelApi.js missing — background.js imports it"; exit 1; }
+          test -f dist/manifest.json || { echo "dist/manifest.json missing"; exit 1; }
+          # A meta CSP in popup.html silently blocks every request to the service.
+          if grep -qi 'http-equiv="Content-Security-Policy"' dist/popup.html; then
+            echo "dist/popup.html has a meta CSP — it intersects with the manifest policy and will block the service"
+            exit 1
+          fi
+      - run: node --check src/blogBackend.js
+
+  server:
+    name: Server
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test

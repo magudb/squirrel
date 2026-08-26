@@ -60,15 +60,24 @@ Fine-grained tokens default to a 30-day expiry. Pick a long one — an expired
 token turns every flush into a silent upstream failure while links pile up in
 Redis. `GET /api/status` surfaces that, and the extension badges the toolbar.
 
-### 3. Deploy
+### 3. Create the Vercel project
 
-Import the `squirrel` repo into Vercel and set **Root Directory** to `server`.
-Framework preset: **Other**. No build command — Vercel compiles `api/**/*.ts`
-with esbuild automatically.
+Either import the repo in the dashboard, or link it from the CLI:
+
+```bash
+npx vercel login
+npx vercel link          # run from the REPO ROOT, not from server/
+```
+
+Then set **Root Directory** to `server` and framework preset to **Other**. No
+build command — Vercel compiles `api/**/*.ts` with esbuild automatically.
 
 Root Directory matters more than it looks: `vercel.json` is read from inside it,
 so a copy at the repo root would be silently ignored and the cron would never
 register.
+
+Deployment itself runs from GitHub Actions — see
+[Deploying](#deploying) below.
 
 ### 4. Environment variables
 
@@ -150,6 +159,68 @@ Two independent triggers, because the plan constrains one of them:
 Hobby caps cron at once per day and *fails the deployment* on anything more
 frequent — `*/15 * * * *` breaks the build rather than skipping runs. On Pro,
 change that one field in `vercel.json`.
+
+## Deploying
+
+`.github/workflows/deploy-server.yml` deploys to production on any push to
+`master` that touches `server/**`, after the tests pass. It needs three
+repository secrets:
+
+| Secret | Where to get it |
+| --- | --- |
+| `VERCEL_TOKEN` | vercel.com/account/tokens |
+| `VERCEL_ORG_ID` | `.vercel/project.json` after `vercel link`, or dashboard → Settings |
+| `VERCEL_PROJECT_ID` | same |
+
+**Only those three.** `GITHUB_TOKEN`, the Upstash credentials, `SQUIRREL_TOKEN`
+and `CRON_SECRET` stay in Vercel project settings — they are runtime
+environment, read by the function when it executes, and never pass through CI.
+Copying them into GitHub would only widen where they can leak from.
+
+### The one thing that will bite you
+
+Every Vercel CLI step runs from the **repository root**, never from `server/`.
+The CLI resolves the project's Root Directory relative to the working
+directory:
+
+```js
+const workPath = join(cwd, project.settings.rootDirectory || '.')
+```
+
+So running the CLI inside `server/` resolves to `server/server`, which builds
+zero functions, registers zero crons — and still exits 0. You get a green tick
+on an empty deployment. The workflow asserts a non-zero function count after
+`vercel build` precisely so that cannot pass silently.
+
+### If you imported the repo in the dashboard
+
+Vercel's Git integration will then deploy on push as well, racing the Actions
+workflow. Turn it off by adding to `server/vercel.json`:
+
+```json
+"git": { "deploymentEnabled": false }
+```
+
+A bare `false` covers every branch; `{"master": false}` would stop production
+but still double-deploy every PR. Don't use "Ignored Build Step" for this —
+a cancelled build still counts as a deployment against your quota. If you
+created the project with `vercel link` instead, there is no Git integration and
+nothing to disable.
+
+### Notes
+
+- Crons only attach to **production** deployments. A preview deploy carries the
+  config but nothing fires.
+- Preview deployments have Deployment Protection on by default, which answers
+  with an HTML login page — point the extension at production, not a preview.
+- The workflow smoke-tests `/api/health` for 200 and `/api/status` for 401
+  after deploying, so a broken auth wrapper fails the run rather than sitting
+  live.
+- `vercel pull` writes your production env vars to `.vercel/.env.production.local`
+  on the runner. They are build-time only and `.vercel/` is gitignored, but the
+  file does briefly exist on disk there.
+- Add required reviewers to the `production` GitHub Environment if you want a
+  manual gate before anything reaches master's deployment.
 
 ## Local development
 
