@@ -25,7 +25,16 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [description, setDescription] = useState('');
-  const { analyze, data: analyzeResult, isAnalyzing } = useAnalyzeLink();
+  /**
+   * A first analysis takes ~13s (a repeat is ~5ms, off the sidecar's cache), and
+   * the description is what gets published as the link text. So the popup is
+   * fully usable during those 13s — which means anything the user changed in
+   * that window is an answer, not a placeholder waiting to be overwritten.
+   */
+  const [descriptionTouched, setDescriptionTouched] = useState(false);
+  const [categoryTouched, setCategoryTouched] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const { analyze, data: analyzeResult, isAnalyzing, isSettled: analysisSettled } = useAnalyzeLink();
 
   const {
     categories,
@@ -37,6 +46,43 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
     refetch,
   } = useBlogData();
   const { addLink, isLoading: isAddingLink, errorMessage: mutationError, reset: resetMutation } = useBlogMutation();
+
+  // The sidecar runs on exactly one machine. A verdict of "not there" has to
+  // release the submit button immediately, even mid-request, or the extension
+  // is worse everywhere else than it was before the AI existed. `undefined`
+  // means the probe has not answered and is deliberately not a verdict.
+  const sidecarMissing = aiSidecarAvailable === false;
+  const isWaitingForAi = isAnalyzing && !sidecarMissing;
+
+  // A re-run keeps the previous result in `data` while pending; showing it as a
+  // live suggestion would offer the answer that is currently being replaced.
+  const suggestedCategory =
+    !isAnalyzing && analyzeResult
+      ? categories.find(c => c.id === analyzeResult.category) ?? null
+      : null;
+  const suggestedDescription = !isAnalyzing ? (analyzeResult?.description ?? '').trim() : '';
+
+  // A touched field is never overwritten, so a suggestion that disagrees with
+  // it has to be offered rather than applied. Dropping it silently loses the
+  // same work the auto-apply used to destroy, just in the other direction.
+  const descriptionSuggestion =
+    descriptionTouched && suggestedDescription && suggestedDescription !== description.trim()
+      ? suggestedDescription
+      : null;
+  const categorySuggestion =
+    categoryTouched && suggestedCategory && suggestedCategory.id !== selectedCategory?.id
+      ? suggestedCategory
+      : null;
+
+  const analysisEmpty = analysisSettled && !isAnalyzing && !sidecarMissing && !analyzeResult;
+
+  const aiStatusMessage = isWaitingForAi
+    ? 'AI is reading the page for a description and category. You can save without waiting.'
+    : sidecarMissing
+      ? 'AI suggestions are unavailable on this machine. Everything else works as usual.'
+      : analysisEmpty
+        ? 'No AI suggestion came back. Write a description yourself.'
+        : '';
 
   useEffect(() => {
     if (tabInfo) {
@@ -63,19 +109,33 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
   }, [tabInfo, analyze]);
 
   useEffect(() => {
-    if (analyzeResult) {
-      const suggestedCategory = categories.find(c => c.id === analyzeResult.category);
-      if (suggestedCategory) {
-        setSelectedCategory(suggestedCategory);
-      }
-      if (analyzeResult.description) {
-        setDescription(analyzeResult.description);
+    if (!analyzeResult) return;
+    if (!categoryTouched) {
+      const suggested = categories.find(c => c.id === analyzeResult.category);
+      if (suggested) {
+        setSelectedCategory(suggested);
       }
     }
-  }, [analyzeResult, categories]);
+    if (!descriptionTouched && analyzeResult.description) {
+      setDescription(analyzeResult.description);
+    }
+  }, [analyzeResult, categories, categoryTouched, descriptionTouched]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  // A button that sits dead for thirteen seconds reads as a hang, so it counts.
+  useEffect(() => {
+    if (!isWaitingForAi) {
+      setElapsedSeconds(0);
+      return;
+    }
+    const startedAt = Date.now();
+    setElapsedSeconds(0);
+    const tick = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [isWaitingForAi]);
+
+  const submitLink = () => {
     setValidationError(null);
     resetMutation();
 
@@ -101,8 +161,22 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
     });
   };
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    // Enter in a text field can submit past a disabled submit button, which is
+    // the exact race that published links with no description at all.
+    if (isWaitingForAi) return;
+    submitLink();
+  };
+
   const handleRegenerate = () => {
     if (!url || !title || isAnalyzing) return;
+    // Asking for a regeneration IS a request to be overwritten, so clear the
+    // touched flags the auto-apply is gated on. Without this the new result
+    // arrives and is offered as a suggestion the user has to accept again,
+    // which is not what clicking Regenerate means.
+    setDescriptionTouched(false);
+    setCategoryTouched(false);
     analyze({ url, title, selectedText, forceRefresh: true });
   };
 
@@ -220,17 +294,9 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
       <div>
         <div className="flex items-center justify-between mb-1">
           <label htmlFor="description" className="block text-sm font-medium text-gray-700">
-            Description {isAnalyzing && <span className="text-blue-500 text-xs ml-1">(AI analyzing...)</span>}
+            Description {isWaitingForAi && <span className="text-blue-500 text-xs ml-1">(AI analyzing...)</span>}
             {!isAnalyzing && analyzeResult?.cached && (
               <span className="text-gray-400 text-xs ml-1">(cached)</span>
-            )}
-            {!isAnalyzing && aiSidecarAvailable === false && (
-              <span
-                className="text-gray-400 text-xs ml-1"
-                title="The local AI sidecar isn't running. Everything else works; write the description yourself."
-              >
-                (AI suggestions unavailable)
-              </span>
             )}
           </label>
           <button
@@ -246,17 +312,39 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
             Regenerate
           </button>
         </div>
+        {/* Never disabled: the whole point is that the user can write their own
+            description instead of waiting for the sidecar. */}
         <textarea
           id="description"
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          onChange={(e) => {
+            setDescription(e.target.value);
+            setDescriptionTouched(true);
+          }}
           rows={2}
+          aria-busy={isWaitingForAi}
           className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-            isAnalyzing ? 'border-blue-300 bg-blue-50 animate-pulse' : 'border-gray-300'
+            isWaitingForAi ? 'border-blue-300' : 'border-gray-300'
           }`}
-          placeholder={isAnalyzing ? 'AI is generating a description...' : 'Short description for the blog (used as link text)'}
-          disabled={isAnalyzing}
+          placeholder={
+            isWaitingForAi
+              ? 'AI is writing one — or type your own'
+              : 'Short description for the blog (used as link text)'
+          }
         />
+        {descriptionSuggestion && (
+          <div className="mt-2 bg-blue-50 border border-blue-200 rounded-md p-3">
+            <p className="text-xs font-medium text-blue-800">AI suggested a different description</p>
+            <p className="text-xs text-blue-700 mt-1 italic">"{descriptionSuggestion}"</p>
+            <button
+              type="button"
+              onClick={() => setDescription(descriptionSuggestion)}
+              className="mt-2 text-xs text-blue-800 underline hover:text-blue-900"
+            >
+              Use AI suggestion
+            </button>
+          </div>
+        )}
       </div>
 
       <div>
@@ -269,28 +357,68 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
           onChange={(e) => {
             const category = categories.find(c => c.id === e.target.value);
             setSelectedCategory(category || null);
+            // Picking the blank placeholder is not a choice — the default
+            // effect immediately snaps back to categories[0], and counting it
+            // as touched would permanently block the AI's own category on a
+            // value the user never selected.
+            setCategoryTouched(Boolean(category));
           }}
+          aria-busy={isWaitingForAi}
           className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-            isAnalyzing ? 'border-blue-300 bg-blue-50' : 'border-gray-300'
+            isWaitingForAi ? 'border-blue-300' : 'border-gray-300'
           }`}
           required
         >
-          <option value="">{isAnalyzing ? 'AI selecting category...' : 'Select a category'}</option>
+          <option value="">{isWaitingForAi ? 'AI selecting category...' : 'Select a category'}</option>
           {categories.map((category) => (
             <option key={category.id} value={category.id}>
               {category.name}
             </option>
           ))}
         </select>
+        {categorySuggestion && (
+          <button
+            type="button"
+            onClick={() => setSelectedCategory(categorySuggestion)}
+            className="mt-2 text-xs text-blue-800 underline hover:text-blue-900"
+          >
+            Use AI suggestion: {categorySuggestion.name}
+          </button>
+        )}
       </div>
 
-      <button
-        type="submit"
-        disabled={isAddingLink}
-        className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {isAddingLink ? 'Adding Link...' : 'Add Link'}
-      </button>
+      {/* Mounted even when empty: a live region only announces text that arrives
+          into a region the screen reader already knows about. */}
+      <div role="status" aria-live="polite" className="min-h-[1rem]">
+        {aiStatusMessage && <p className="text-xs text-gray-500">{aiStatusMessage}</p>}
+      </div>
+
+      <div className="space-y-2">
+        <button
+          type="submit"
+          disabled={isAddingLink || isWaitingForAi}
+          className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isAddingLink
+            ? 'Adding Link...'
+            : isWaitingForAi
+              ? `Waiting for AI... ${elapsedSeconds}s`
+              : 'Add Link'}
+        </button>
+        {/* The escape hatch. A sidecar that is slow, wedged, or lying about being
+            up must never be able to hold a link hostage. Only an in-flight save
+            disables it, and that is the save happening, not the AI blocking. */}
+        {isWaitingForAi && (
+          <button
+            type="button"
+            onClick={submitLink}
+            disabled={isAddingLink}
+            className="w-full bg-white border border-gray-300 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Save without AI
+          </button>
+        )}
+      </div>
     </form>
   );
 };

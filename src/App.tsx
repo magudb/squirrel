@@ -142,7 +142,17 @@ function AppContent() {
 
       {/* Content */}
       <div>
-        {activeTab === 'add' && <LinkForm tabInfo={tabInfo ?? undefined} />}
+        {/*
+          Add stays mounted and is hidden instead, because its state is
+          volatile and expensive: a first-time AI analysis takes ~13s, and
+          unmounting mid-flight throws away both the pending result and
+          anything the user has typed. Nipping over to Queue to check the
+          outbox should not cost you the description. The other tabs own no
+          state worth preserving, so they still mount on demand.
+        */}
+        <div hidden={activeTab !== 'add'}>
+          <LinkForm tabInfo={tabInfo ?? undefined} />
+        </div>
         {activeTab === 'queue' && <Queue />}
         {activeTab === 'saved' && <SavedLinks />}
         {activeTab === 'settings' && <Settings />}

@@ -13,6 +13,14 @@ import { Link, AnalyzeLinkResponse } from '../types';
 const BACKEND_URL = 'http://localhost:3001';
 const FETCH_TIMEOUT_MS = 3000;
 
+/**
+ * The sidecar shells out to the `claude` CLI, which takes ~13s on a URL it has
+ * not seen and ~5ms on one it has (30-day cache). The 3s default aborts every
+ * first-time analysis, which looks exactly like "the AI returned nothing" and
+ * silently publishes the raw page title instead of a description.
+ */
+export const ANALYZE_TIMEOUT_MS = 30_000;
+
 // Custom error for backend connectivity issues
 export class BackendError extends Error {
   constructor(message: string, public readonly statusCode?: number) {
@@ -88,11 +96,15 @@ export class BlogService {
 
   static async analyzeLink(url: string, title: string, selectedText?: string, forceRefresh = false): Promise<AnalyzeLinkResponse | null> {
     try {
-      const response = await fetchWithTimeout(`${BACKEND_URL}/api/analyze-link`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, title, selectedText, forceRefresh }),
-      });
+      const response = await fetchWithTimeout(
+        `${BACKEND_URL}/api/analyze-link`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url, title, selectedText, forceRefresh }),
+        },
+        ANALYZE_TIMEOUT_MS,
+      );
 
       if (!response.ok) return null;
       const data = await response.json();

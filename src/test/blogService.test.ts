@@ -277,3 +277,33 @@ describe('BlogService', () => {
     });
   });
 });
+
+describe('analyzeLink timeout budget', () => {
+  // The sidecar takes ~13s on a URL it has not analysed before. A 3s budget
+  // aborted every first-time analysis and returned null, which the form could
+  // only read as "no suggestion" — links then published with the raw page
+  // title. Pin the budget behaviourally, not by asserting the constant.
+  it('waits out a slow first-time analysis instead of aborting it', async () => {
+    vi.useFakeTimers();
+    try {
+      const payload = { category: 'ai', description: 'A real suggestion' };
+
+      vi.mocked(global.fetch).mockImplementation((_url, init) =>
+        new Promise((resolve, reject) => {
+          const signal = (init as RequestInit | undefined)?.signal;
+          signal?.addEventListener('abort', () =>
+            reject(Object.assign(new DOMException('aborted', 'AbortError'))),
+          );
+          setTimeout(() => resolve({ ok: true, json: () => Promise.resolve(payload) } as Response), 12_700);
+        }),
+      );
+
+      const pending = BlogService.analyzeLink('https://example.com/new', 'Fresh link');
+      await vi.advanceTimersByTimeAsync(12_700);
+
+      await expect(pending).resolves.toEqual(payload);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

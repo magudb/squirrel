@@ -13,6 +13,12 @@ export const useAnalyzeLink = () => {
     analyze: mutation.mutate,
     data: mutation.data ?? null,
     isAnalyzing: mutation.isPending,
+    /**
+     * The call is over. `analyzeLink` swallows its own failures and answers
+     * `null`, so "settled with no data" is the only way the form can tell an
+     * absent suggestion from one that has not arrived yet.
+     */
+    isSettled: mutation.isSuccess || mutation.isError,
     error: mutation.error,
     reset: mutation.reset,
   };
