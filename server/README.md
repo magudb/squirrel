@@ -207,6 +207,39 @@ a cancelled build still counts as a deployment against your quota. If you
 created the project with `vercel link` instead, there is no Git integration and
 nothing to disable.
 
+### If a deployment comes back BLOCKED
+
+The CLI reports this with an empty error and the dashboard shows nothing
+useful. The reason is in the API response, not the CLI output:
+
+```bash
+curl -s -H "Authorization: Bearer $VERCEL_TOKEN" \
+  "https://api.vercel.com/v13/deployments/<deployment-url>?teamId=<team>" \
+  | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['readyStateReason'])"
+```
+
+The one that bit us:
+
+> Git author `mlu@testaviva.dk` must have access to the team Magnus on Vercel
+> to create deployments.
+
+Vercel checks the **commit author of HEAD** against the accounts holding a seat
+on the team. The repo committed under a work address while the Vercel account
+is `magnus@udbjorg.net`, so every deploy was refused — including, crucially,
+deploys from GitHub Actions, which check out the repo and read the same author.
+
+Two fixes, both real:
+
+- Add the second address to the Vercel account (Account → Emails, then verify).
+  Works no matter who authors a given commit — prefer this if more than one
+  machine or identity ever commits here.
+- `git config --local user.email magnus@udbjorg.net`, which is what this repo
+  now does. Only holds while HEAD carries that address.
+
+Do **not** work around it with `vercel deploy --meta githubCommitAuthorEmail=…`.
+That does not grant access, it just records an author who did not write the
+commit.
+
 ### Notes
 
 - Crons only attach to **production** deployments. A preview deploy carries the
