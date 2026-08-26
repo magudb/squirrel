@@ -74,7 +74,9 @@ jobs:
 
       - name: Verify the build actually produced functions
         run: |
-          count=$(find .vercel/output/functions -maxdepth 2 -name '*.func' -type d | wc -l)
+          # No -maxdepth: nested routes land deeper (api/links/[id].func,
+          # api/cron/flush.func) and a shallow search silently undercounts.
+          count=$(find .vercel/output/functions -name '*.func' -type d | wc -l)
           echo "functions built: $count"
           if [ "$count" -eq 0 ]; then
             echo "::error::Build produced no functions. Check that Root Directory is 'server' and that the CLI ran from the repo root."

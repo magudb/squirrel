@@ -79,3 +79,8 @@ dist/
 
 # Vercel CLI: build output and the linked project id
 .vercel/
+
+# Vercel CLI writes .env.local and .vercel/.env.*.local with live credentials.
+.env
+.env.*
+!.env.example
