@@ -37,6 +37,12 @@ vi.mock('../hooks/useSquirrel', () => ({
     setTarget: { mutate: vi.fn(), isPending: false, error: null },
   }),
   useSquirrelCategories: () => ({ data: [] }),
+  useCreateDraft: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+    error: null,
+    data: null,
+  }),
   usePublish: () => ({
     mutate: vi.fn(),
     reset: vi.fn(),

@@ -1,5 +1,14 @@
 import React, { useState } from 'react';
-import { useDrafts, usePublish, useQueue, useSquirrelCategories, useSquirrelConfig, useStatus } from '../hooks/useSquirrel';
+import {
+  useCreateDraft,
+  useDrafts,
+  usePublish,
+  useQueue,
+  useSquirrelCategories,
+  useSquirrelConfig,
+  useStatus,
+} from '../hooks/useSquirrel';
+import { SquirrelApiError } from '../utils/squirrelApi';
 import type { Category, FlushResult, LinkPatch, PendingLink } from '../types';
 
 function formatAge(addedAt: number): string {
@@ -13,6 +22,97 @@ function formatAge(addedAt: number): string {
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Kept in step with MAX_TITLE_LENGTH in server/api/_lib/template.ts. */
+const MAX_TITLE_LENGTH = 200;
+
+/**
+ * Today on the user's calendar, not the service's.
+ *
+ * The date is sent with the request rather than left for the server to default,
+ * so the file carries the day the user was looking at. Reading it in UTC here
+ * would put the wrong day in the filename for the last two hours of every
+ * evening in CEST, and a draft's date is not something you rename later.
+ */
+function todayIsoDate(): string {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+/**
+ * `slugify` from `server/api/_lib/paths.ts`, ported for the filename preview —
+ * minus the throw, because an empty slug is a state this form has to render
+ * rather than an exception.
+ *
+ * Duplicating a rule is a real cost and the two copies can drift, so the reason
+ * this one is worth it is worth stating. The publish confirmation shows the
+ * failure mode: it used to name a destination the server would not create,
+ * because the server takes the title from the draft's front matter as it reads
+ * at commit time and the date from its own UTC clock — nothing computed in the
+ * popup could have been right, so it now shows no filename at all. Creating a
+ * draft is the opposite case: the title and the date are both typed here and
+ * travel verbatim in the request body, which leaves slugify as the only
+ * transformation between them and the path, and it is pure. The preview is
+ * still labelled a preview, and the filename that gets reported afterwards is
+ * the one the server sent back, never this one.
+ */
+function previewSlug(title: string): string {
+  return title
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    // Apostrophes join words rather than separating them: "doesn't" -> "doesnt".
+    .replace(/['\u2018\u2019]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80)
+    .replace(/-+$/, '');
+}
+
+/**
+ * A refused create is usually an answer rather than breakage, and the generic
+ * "Request failed (HTTP 409)" tells the user nothing they can act on.
+ */
+function describeCreateError(error: unknown): { heading: string; detail: string; note: string } {
+  const status = error instanceof SquirrelApiError ? error.status : undefined;
+
+  if (status === 409) {
+    return {
+      heading: 'That draft already exists',
+      detail:
+        'A draft with that name already exists for that date. Change the title or the date, or select the existing draft as the target above.',
+      note: 'Nothing was committed.',
+    };
+  }
+
+  if (status === 400) {
+    // Key on the code, not the status: `bad_date` comes back as a 400 too, and
+    // a date rejection headed "would not accept that title" sends the user off
+    // editing the wrong field.
+    const code = error instanceof SquirrelApiError ? error.code : undefined;
+    return {
+      heading:
+        code === 'bad_date'
+          ? 'The service would not accept that date'
+          : 'The service would not accept that title',
+      detail: errorText(error),
+      note: 'Nothing was committed.',
+    };
+  }
+
+  return {
+    heading: 'Could not create the draft',
+    detail: errorText(error),
+    // A timeout or a dropped connection says nothing about whether the commit
+    // landed. Claiming it did not is a lie the user would act on by retrying.
+    note: 'Check the draft list before retrying — the commit may still have landed.',
+  };
 }
 
 const FlushCounts: React.FC<{ result: FlushResult }> = ({ result }) => (
@@ -232,6 +332,191 @@ const QueueRow: React.FC<QueueRowProps> = ({ link, categories, onSave, onDelete 
   );
 };
 
+/**
+ * Creating the next Curated Insights draft from the extension.
+ *
+ * Mounted only while expanded, so closing it clears the form, the confirmation
+ * and the last result — this runs about four times a year and a stale success
+ * card sitting above the everyday controls would be noise.
+ */
+const NewDraftForm: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const create = useCreateDraft();
+  const [title, setTitle] = useState('');
+  const [date, setDate] = useState(todayIsoDate);
+  const [setAsTarget, setSetAsTarget] = useState(true);
+  const [confirming, setConfirming] = useState(false);
+
+  const trimmedTitle = title.trim();
+  const slug = previewSlug(trimmedTitle);
+  const dateValid = ISO_DATE.test(date);
+  // Mirror the server's own title rules, not just the slug rule. Both are pure
+  // and short, and without them the preview happily renders a filename for a
+  // title the server rejects — the user reads the commit warning, confirms, and
+  // only then learns it was never going to work.
+  const titleRejected =
+    trimmedTitle.length > MAX_TITLE_LENGTH || /[<>]/.test(trimmedTitle);
+  const canCreate = slug !== '' && dateValid && !titleRejected;
+  const failure = create.error ? describeCreateError(create.error) : null;
+
+  // Any edit invalidates an open confirmation: the yellow card describes the
+  // file that was about to be created, and confirming it after a change would
+  // commit something the user never read.
+  const edited = () => setConfirming(false);
+
+  // The form is replaced by its outcome rather than kept alongside it. A second
+  // create from the same filled-in form either 409s or, after a date change,
+  // quietly adds a near-duplicate file to the live repo.
+  if (create.data) {
+    const { draft, commitSha, target } = create.data;
+    return (
+      <div className="mt-2 bg-green-50 border border-green-200 rounded-md p-3">
+        <p className="text-sm font-medium text-green-800">Draft created</p>
+        {/* The server's own report of what it wrote, not the preview. */}
+        <p className="text-xs text-green-700 mt-1 font-mono break-all">{draft.path}</p>
+        <p className="text-xs text-gray-600 mt-1">
+          commit {commitSha.slice(0, 7)}
+          {target ? ' · flushes now write into it' : ' · the flush target is unchanged'}
+        </p>
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-2 text-xs text-green-800 underline hover:text-green-900"
+        >
+          Close
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2 border border-gray-200 rounded-md p-3 space-y-3">
+      <div>
+        <label htmlFor="new-draft-title" className="block text-sm font-medium text-gray-700 mb-1">
+          Title
+        </label>
+        <input
+          id="new-draft-title"
+          type="text"
+          value={title}
+          onChange={(e) => {
+            setTitle(e.target.value);
+            edited();
+          }}
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          placeholder="Curated Insights Q4 2026"
+        />
+      </div>
+
+      <div>
+        <label htmlFor="new-draft-date" className="block text-sm font-medium text-gray-700 mb-1">
+          Date
+        </label>
+        <input
+          id="new-draft-date"
+          type="date"
+          value={date}
+          onChange={(e) => {
+            setDate(e.target.value);
+            edited();
+          }}
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+        />
+      </div>
+
+      <div aria-live="polite">
+        {trimmedTitle !== '' && slug === '' ? (
+          <p className="text-xs text-yellow-700">
+            That title has no letters or digits, so there is no filename to build from it.
+          </p>
+        ) : !dateValid ? (
+          <p className="text-xs text-yellow-700">
+            Pick a date — it becomes the first part of the filename.
+          </p>
+        ) : canCreate ? (
+          <>
+            <p className="text-xs text-gray-500">
+              Preview: <span className="font-mono break-all">_drafts/{date}-{slug}.md</span>
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              Built here with the same rule the service uses. The service names the real file and
+              reports it back.
+            </p>
+          </>
+        ) : (
+          <p className="text-xs text-gray-400">The filename comes from the title and the date.</p>
+        )}
+      </div>
+
+      <label className="flex items-center space-x-2 text-xs text-gray-600">
+        <input
+          type="checkbox"
+          checked={setAsTarget}
+          onChange={(e) => {
+            setSetAsTarget(e.target.checked);
+            edited();
+          }}
+          className="rounded border-gray-300 focus:ring-2 focus:ring-blue-500"
+        />
+        <span>Flush into this draft from now on</span>
+      </label>
+
+      {!confirming ? (
+        <button
+          type="button"
+          disabled={!canCreate}
+          onClick={() => setConfirming(true)}
+          className="w-full border border-blue-600 text-blue-600 py-2 px-4 rounded-md hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Create draft...
+        </button>
+      ) : (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
+          <p className="text-sm font-medium text-yellow-800">This commits to master</p>
+          <p className="text-xs text-yellow-700 mt-1">
+            A new empty Curated Insights draft is committed to the live blog repo
+            {setAsTarget && <> and every flush starts writing into it</>}. Removing it again is a
+            manual edit in the repo.
+          </p>
+          <div className="flex items-center justify-end space-x-3 mt-3">
+            {/* Dead while the request is in flight: nothing here can call back
+                a commit that is already on its way, and a live Cancel would
+                claim otherwise. */}
+            <button
+              type="button"
+              disabled={create.isPending}
+              onClick={() => setConfirming(false)}
+              className="text-xs text-gray-600 hover:text-gray-800 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={create.isPending || !canCreate}
+              onClick={() => {
+                // The disabled prop is the real guard; this covers the click
+                // that is already dispatched when the re-render happens.
+                if (create.isPending) return;
+                create.mutate({ title: trimmedTitle, date, setAsTarget });
+              }}
+              className="bg-blue-600 text-white text-xs py-1.5 px-3 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {create.isPending ? 'Creating...' : 'Create in master'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {failure && (
+        <div className="bg-red-50 border border-red-200 rounded-md p-3">
+          <p className="text-sm font-medium text-red-800">{failure.heading}</p>
+          <p className="text-xs text-red-600 mt-1">{failure.detail}</p>
+          <p className="text-xs text-gray-500 mt-1">{failure.note}</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const Queue: React.FC = () => {
   const { isConfigured, isLoading: configLoading } = useSquirrelConfig();
   const status = useStatus();
@@ -243,6 +528,7 @@ export const Queue: React.FC = () => {
   const [publishDraftId, setPublishDraftId] = useState('');
   const [prune, setPrune] = useState(false);
   const [confirmingPublish, setConfirmingPublish] = useState(false);
+  const [creatingDraft, setCreatingDraft] = useState(false);
 
   const categories = categoriesQuery.data ?? [];
   const lastFlushError = status.data?.lastFlush?.error;
@@ -304,9 +590,25 @@ export const Queue: React.FC = () => {
       )}
 
       <div>
-        <label htmlFor="target" className="block text-sm font-medium text-gray-700 mb-1">
-          Target draft
-        </label>
+        <div className="flex items-center justify-between mb-1">
+          <label htmlFor="target" className="block text-sm font-medium text-gray-700">
+            Target draft
+          </label>
+          {/* Collapsed by default. Creating a draft happens once a quarter and
+              must not sit next to the controls used on every save. */}
+          <button
+            type="button"
+            aria-expanded={creatingDraft}
+            aria-controls="new-draft"
+            onClick={() => setCreatingDraft((open) => !open)}
+            className="text-xs text-blue-600 hover:text-blue-800"
+          >
+            {/* Not "Cancel": the confirmation card inside the form owns that
+                word, and two buttons named Cancel a centimetre apart on a
+                480px popup is a way to commit something by accident. */}
+            {creatingDraft ? 'Hide' : 'New draft'}
+          </button>
+        </div>
         <select
           id="target"
           value={target?.draftId ?? ''}
@@ -325,6 +627,10 @@ export const Queue: React.FC = () => {
         {setTarget.error && (
           <p className="text-xs text-red-600 mt-1">{errorText(setTarget.error)}</p>
         )}
+
+        <div id="new-draft">
+          {creatingDraft && <NewDraftForm onClose={() => setCreatingDraft(false)} />}
+        </div>
       </div>
 
       <div className="space-y-2">

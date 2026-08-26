@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { SquirrelApi, SquirrelApiError, getConfig, setConfig } from '../utils/squirrelApi';
-import type { LinkPatch, PendingLink, SquirrelConfig } from '../types';
+import type { LinkPatch, NewDraft, PendingLink, SquirrelConfig } from '../types';
 
 /**
  * Query keys for everything the Vercel link service answers.
@@ -222,6 +222,38 @@ export function useDrafts() {
     error: draftsQuery.error ?? targetQuery.error,
     setTarget,
   };
+}
+
+/**
+ * Creates the next Curated Insights draft in the blog repo.
+ *
+ * This is the once-a-quarter action that used to require a checkout of the blog
+ * on the right machine, which is exactly the dependency the service exists to
+ * remove.
+ */
+export function useCreateDraft() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (draft: NewDraft) => SquirrelApi.createDraft(draft),
+    // A create writes a commit to master. Retrying on a timeout would attempt a
+    // second file whose fate depends on whether the first one landed, and the
+    // 409 that saves us only fires once the first commit is visible.
+    retry: false,
+    onSuccess: (result) => {
+      // A new file in _drafts/ makes the cached listing wrong immediately, and
+      // the listing is what the target and publish selects are built from.
+      queryClient.invalidateQueries({ queryKey: squirrelKeys.drafts });
+      if (result.target) {
+        // Seed the answer the server already gave so the target select re-points
+        // without a round trip, then confirm it — same shape as `setTarget`.
+        queryClient.setQueryData(squirrelKeys.target, result.target);
+        queryClient.invalidateQueries({ queryKey: squirrelKeys.target });
+        // /api/status reports the target back, so it is stale too.
+        queryClient.invalidateQueries({ queryKey: squirrelKeys.status });
+      }
+    },
+  });
 }
 
 export function usePublish() {

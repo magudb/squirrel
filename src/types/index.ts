@@ -157,6 +157,30 @@ export interface CreateLinkResponse {
   duplicate?: boolean;
 }
 
+/**
+ * The body of `POST /api/drafts`. No path and no filename: the server builds
+ * `_drafts/<date>-<slug>.md` itself, for the same reason publishing does — a
+ * client-supplied path is a way to name the file that gets committed.
+ */
+export interface NewDraft {
+  title: string;
+  /**
+   * `YYYY-MM-DD`. Sent explicitly rather than left out, so the date in the
+   * filename is the one the user saw and not whatever UTC day the function
+   * happened to run on.
+   */
+  date?: string;
+  setAsTarget?: boolean;
+}
+
+/** The 201 from `POST /api/drafts`. */
+export interface CreateDraftResponse {
+  draft: DraftRef;
+  commitSha: string;
+  /** Present only when `setAsTarget` was asked for and the server honoured it. */
+  target?: TargetDraft;
+}
+
 /** `baseUrl` is always an origin — no trailing slash, no path. */
 export interface SquirrelConfig {
   baseUrl: string;

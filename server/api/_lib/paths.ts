@@ -162,14 +162,62 @@ export function slugify(title: string): string {
  * different days depending on where the function ran.
  */
 export function postPathFor(title: string, date: Date): string {
+  return `${POSTS_DIR}/${datePrefix(date, 'publish')}-${slugify(title)}.md`;
+}
+
+/**
+ * The destination for a NEW draft, built from the same two ingredients as a
+ * post: a UTC date prefix and a kebab slug.
+ *
+ * Existing drafts in this repo carry spaces and colons (`2025-06-20-on AI.md`)
+ * and the write allowlist still accepts them, but nothing generated here should
+ * add to that pile: Jekyll's own slugify keeps commas and case, which is what
+ * produced the eight fix-up renames in the blog's history. `.md`, never
+ * `.markdown` — the legacy extension is read, not written.
+ */
+export function draftPathFor(title: string, date: Date): string {
+  return `${DRAFTS_DIR}/${datePrefix(date, 'draft')}-${slugify(title)}.md`;
+}
+
+/** `YYYY-MM-DD` in UTC. `what` only names the operation in the error message,
+ *  so a rejected date reads the same way it always did on the publish path. */
+function datePrefix(date: Date, what: 'publish' | 'draft'): string {
   const ms = date instanceof Date ? date.getTime() : Number.NaN;
   if (!Number.isFinite(ms)) {
-    throw badRequest('Invalid publish date', 'bad_date');
+    throw badRequest(`Invalid ${what} date`, 'bad_date');
   }
   const yyyy = date.getUTCFullYear();
   const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
   const dd = String(date.getUTCDate()).padStart(2, '0');
-  return `${POSTS_DIR}/${yyyy}-${mm}-${dd}-${slugify(title)}.md`;
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+/**
+ * A client-supplied `YYYY-MM-DD`, and it has to be the date it claims to be:
+ * `Date.UTC` rolls `2026-02-31` forward into March, and the file would then
+ * carry a date prefix the user never asked for — which for a post is its URL.
+ * `undefined` means "today", read in UTC for the same reason `datePrefix` is.
+ *
+ * `_lib/publish.ts` still applies this rule through a private copy; it is
+ * exported here so the next caller — and eventually that one — shares it rather
+ * than re-deriving which invalid dates JavaScript silently accepts.
+ */
+export function parseIsoDate(raw: string | undefined): Date {
+  if (raw === undefined) return new Date();
+  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  if (parts === null) {
+    throw badRequest('date must be formatted YYYY-MM-DD', 'bad_date');
+  }
+  const [year, month, day] = [Number(parts[1]), Number(parts[2]), Number(parts[3])];
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    throw badRequest(`No such date: ${raw}`, 'bad_date');
+  }
+  return date;
 }
 
 /**

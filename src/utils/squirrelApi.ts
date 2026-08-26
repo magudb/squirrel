@@ -1,9 +1,11 @@
 import type {
   Category,
+  CreateDraftResponse,
   CreateLinkResponse,
   DraftRef,
   FlushResult,
   LinkPatch,
+  NewDraft,
   NewLink,
   PendingLink,
   PublishResult,
@@ -305,6 +307,23 @@ export const SquirrelApi = {
 
   listDrafts(): Promise<DraftRef[]> {
     return call<DraftRef[]>('/api/drafts');
+  },
+
+  /**
+   * Creates the next draft file and commits it to master.
+   *
+   * Slow timeout for the same reason flush and publish use it: the service does
+   * a GitHub write round trip before it answers. 409 (the destination already
+   * exists) and 400 (a title with no usable slug) arrive as `SquirrelApiError`
+   * with those statuses, and callers are expected to say which one happened —
+   * "already there" is not a failure the user should read as breakage.
+   */
+  createDraft(draft: NewDraft): Promise<CreateDraftResponse> {
+    return call<CreateDraftResponse>('/api/drafts', {
+      method: 'POST',
+      body: draft,
+      timeoutMs: SLOW_TIMEOUT_MS,
+    });
   },
 
   async getTarget(): Promise<TargetDraft | null> {

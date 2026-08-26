@@ -146,6 +146,43 @@ export async function fileExists(path: string, signal?: AbortSignal): Promise<bo
   }
 }
 
+/**
+ * Create a file, atomically, only if it does not already exist.
+ *
+ * `commitChanges` cannot express this: a Git Data tree entry silently replaces
+ * whatever sits at its path, so a check-then-commit still loses the race where
+ * a competing commit lands between the read of the ref and the write — no 422,
+ * no conflict, the other file is just gone. Omitting `sha` on the Contents API
+ * means "create", and GitHub answers 422 if the path is taken, which closes the
+ * window on GitHub's side instead of ours.
+ *
+ * Returns the new commit sha. Throws GitHubError with status 422 when the file
+ * already exists.
+ */
+export async function createFileIfAbsent(
+  path: string,
+  content: string,
+  message: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const { base, branch } = target();
+  const body = await json<{ commit: { sha: string } }>(
+    `${base}/contents/${urlPath(path)}`,
+    {
+      method: 'PUT',
+      signal,
+      body: {
+        message,
+        // The Contents API takes base64, and the corpus contains Danish letters
+        // and emoji, so this must go through UTF-8 rather than a byte cast.
+        content: Buffer.from(content, 'utf8').toString('base64'),
+        branch,
+      },
+    },
+  );
+  return body.commit.sha;
+}
+
 interface ContentsEntry {
   name: string;
   path: string;
