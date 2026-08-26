@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { BlogService, BackendError } from '../utils/blogService';
+import { BlogService } from '../utils/blogService';
 
 describe('BlogService', () => {
   beforeEach(() => {
@@ -49,7 +49,11 @@ describe('BlogService', () => {
       expect(result).toBe('- [Example Title](https://example.com){:target="_blank"}');
     });
 
-    it('should sanitize markdown special characters in text', () => {
+    // kramdown renders `\[` as `[`, so escaping the pair is output-identical to
+    // the corpus and survives an unbalanced bracket. Parentheses render fine on
+    // their own and appear unescaped in 24 real bullets — escaping them would
+    // put a stray backslash into the published post.
+    it('should escape brackets but leave parentheses alone', () => {
       const link = {
         id: '1',
         url: 'https://example.com',
@@ -59,10 +63,7 @@ describe('BlogService', () => {
       };
 
       const result = BlogService.formatLink(link);
-      expect(result).toContain('\\[');
-      expect(result).toContain('\\]');
-      expect(result).toContain('\\(');
-      expect(result).toContain('\\)');
+      expect(result).toBe('- [Title \\[with\\] (brackets)](https://example.com){:target="_blank"}');
     });
 
     it('should strip pipe characters from text to prevent markdown table issues', () => {
@@ -79,7 +80,22 @@ describe('BlogService', () => {
       expect(result).toBe('- [Title - with - pipes](https://example.com){:target="_blank"}');
     });
 
-    it('should handle URLs with parentheses by encoding them', () => {
+    it('should strip angle brackets and collapse whitespace in text', () => {
+      const link = {
+        id: '1',
+        url: 'https://example.com',
+        title: '  A <script> tag\n  and   spaces  ',
+        category: 'test',
+        timestamp: Date.now(),
+      };
+
+      const result = BlogService.formatLink(link);
+      expect(result).toBe('- [A script tag and spaces](https://example.com){:target="_blank"}');
+    });
+
+    // Percent-encoding parens is not identity-preserving per RFC 3986 §2.2 and
+    // can 404 a working link; kramdown handles a balanced pair unaided.
+    it('should emit a URL with balanced parentheses verbatim', () => {
       const link = {
         id: '1',
         url: 'https://example.com/page_(test)',
@@ -89,8 +105,23 @@ describe('BlogService', () => {
       };
 
       const result = BlogService.formatLink(link);
-      // URL parentheses should be encoded to prevent markdown breaking
-      expect(result).toContain('https://example.com/page_%28test%29');
+      expect(result).toBe('- [Example](https://example.com/page_(test)){:target="_blank"}');
+      expect(result).not.toContain('%28');
+      expect(result).not.toContain('%29');
+    });
+
+    it('should wrap a URL in angle brackets when the bare form would break', () => {
+      const unbalanced = BlogService.formatLink({
+        url: 'https://example.com/page_(test',
+        title: 'Example',
+      });
+      expect(unbalanced).toBe('- [Example](<https://example.com/page_(test>){:target="_blank"}');
+
+      const spaced = BlogService.formatLink({
+        url: 'https://example.com/a b',
+        title: 'Example',
+      });
+      expect(spaced).toBe('- [Example](<https://example.com/a b>){:target="_blank"}');
     });
 
     it('should use description as link text when present', () => {
@@ -174,31 +205,19 @@ describe('BlogService', () => {
     });
   });
 
-  describe('getCategories', () => {
-    it('should fetch categories from backend when available', async () => {
-      const mockCategories = [{ id: 'test', name: 'Test Category', anchor: 'test' }];
-      vi.mocked(global.fetch).mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve(mockCategories),
-      } as Response);
+  describe('checkLocalAi', () => {
+    it('should report the sidecar as available when it answers', async () => {
+      vi.mocked(global.fetch).mockResolvedValue({ ok: true } as Response);
 
-      const result = await BlogService.getCategories();
-      expect(result).toEqual(mockCategories);
+      await expect(BlogService.checkLocalAi()).resolves.toBe(true);
     });
 
-    it('should throw BackendError when backend fails', async () => {
-      vi.mocked(global.fetch).mockRejectedValue(new Error('Network error'));
+    // The sidecar runs on one machine; everywhere else this has to be a quiet
+    // false rather than an error the UI has to explain.
+    it('should report false rather than throwing when the sidecar is absent', async () => {
+      vi.mocked(global.fetch).mockRejectedValue(new Error('ECONNREFUSED'));
 
-      await expect(BlogService.getCategories()).rejects.toThrow(BackendError);
-    });
-
-    it('should throw BackendError when backend returns non-ok response', async () => {
-      vi.mocked(global.fetch).mockResolvedValue({
-        ok: false,
-        status: 500,
-      } as Response);
-
-      await expect(BlogService.getCategories()).rejects.toThrow(BackendError);
+      await expect(BlogService.checkLocalAi()).resolves.toBe(false);
     });
   });
 
@@ -217,10 +236,27 @@ describe('BlogService', () => {
         expect.objectContaining({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: 'https://example.com', title: 'Test Article', selectedText: 'some selected text' }),
+          body: JSON.stringify({ url: 'https://example.com', title: 'Test Article', selectedText: 'some selected text', forceRefresh: false }),
         })
       );
       expect(result).toEqual(mockResponse);
+    });
+
+    it('should pass forceRefresh through to the backend when regenerating', async () => {
+      const mockResponse = { category: 'development', description: 'Regenerated description', cached: false };
+      vi.mocked(global.fetch).mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(mockResponse),
+      } as Response);
+
+      await BlogService.analyzeLink('https://example.com', 'Test Article', 'some selected text', true);
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        'http://localhost:3001/api/analyze-link',
+        expect.objectContaining({
+          body: JSON.stringify({ url: 'https://example.com', title: 'Test Article', selectedText: 'some selected text', forceRefresh: true }),
+        })
+      );
     });
 
     it('should return null when backend returns non-ok response', async () => {

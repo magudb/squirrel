@@ -4,8 +4,8 @@ import { AnalyzeLinkResponse } from '../types';
 
 export const useAnalyzeLink = () => {
   const mutation = useMutation({
-    mutationFn: async ({ url, title, selectedText }: { url: string; title: string; selectedText?: string }): Promise<AnalyzeLinkResponse | null> => {
-      return BlogService.analyzeLink(url, title, selectedText);
+    mutationFn: async ({ url, title, selectedText, forceRefresh }: { url: string; title: string; selectedText?: string; forceRefresh?: boolean }): Promise<AnalyzeLinkResponse | null> => {
+      return BlogService.analyzeLink(url, title, selectedText, forceRefresh);
     },
   });
 

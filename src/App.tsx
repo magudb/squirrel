@@ -3,6 +3,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { LinkForm } from './components/LinkForm';
 import { SavedLinks } from './components/SavedLinks';
+import { Queue } from './components/Queue';
+import { Settings } from './components/Settings';
+import { useSquirrelConfig } from './hooks/useSquirrel';
 import { TabInfo } from './types';
 
 const queryClient = new QueryClient({
@@ -53,9 +56,28 @@ function isSpecialPage(url: string | undefined): boolean {
   return url.startsWith('chrome://') || url.startsWith('chrome-extension://');
 }
 
+const TABS = [
+  { id: 'add', label: 'Add' },
+  { id: 'queue', label: 'Queue' },
+  { id: 'saved', label: 'Saved' },
+  { id: 'settings', label: 'Settings' },
+] as const;
+
+type Tab = (typeof TABS)[number]['id'];
+
 function AppContent() {
-  const [activeTab, setActiveTab] = useState<'add' | 'saved'>('add');
+  const [activeTab, setActiveTab] = useState<Tab>('add');
+  const [landed, setLanded] = useState(false);
   const [tabInfo, setTabInfo] = useState<TabInfo | null>(null);
+  const { isConfigured, isLoading: configLoading } = useSquirrelConfig();
+
+  // Every other tab is empty without a service, so open on the one that fixes
+  // that. Only on the first load — never yank the user off a tab they chose.
+  useEffect(() => {
+    if (configLoading || landed) return;
+    setLanded(true);
+    if (!isConfigured) setActiveTab('settings');
+  }, [configLoading, isConfigured, landed]);
 
   useEffect(() => {
     const getCurrentTabInfo = async () => {
@@ -103,35 +125,27 @@ function AppContent() {
 
       {/* Navigation */}
       <div className="flex border-b">
-        <button
-          onClick={() => setActiveTab('add')}
-          className={`flex-1 py-3 px-4 text-center font-medium transition-colors ${
-            activeTab === 'add'
-              ? 'bg-blue-50 text-blue-600 border-b-2 border-blue-600'
-              : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-          }`}
-        >
-          Add Link
-        </button>
-        <button
-          onClick={() => setActiveTab('saved')}
-          className={`flex-1 py-3 px-4 text-center font-medium transition-colors ${
-            activeTab === 'saved'
-              ? 'bg-blue-50 text-blue-600 border-b-2 border-blue-600'
-              : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-          }`}
-        >
-          Saved Links
-        </button>
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex-1 py-3 px-2 text-center text-sm font-medium transition-colors ${
+              activeTab === tab.id
+                ? 'bg-blue-50 text-blue-600 border-b-2 border-blue-600'
+                : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       {/* Content */}
       <div>
-        {activeTab === 'add' ? (
-          <LinkForm tabInfo={tabInfo ?? undefined} />
-        ) : (
-          <SavedLinks />
-        )}
+        {activeTab === 'add' && <LinkForm tabInfo={tabInfo ?? undefined} />}
+        {activeTab === 'queue' && <Queue />}
+        {activeTab === 'saved' && <SavedLinks />}
+        {activeTab === 'settings' && <Settings />}
       </div>
 
       {/* Footer */}

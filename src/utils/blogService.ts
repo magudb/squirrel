@@ -1,7 +1,17 @@
-import { Category, Link, BlogPost, AnalyzeLinkResponse } from '../types';
+import { Link, AnalyzeLinkResponse } from '../types';
+
+/**
+ * What is left of the local Express backend.
+ *
+ * Links are owned by the hosted service now (`squirrelApi.ts`); this module is
+ * an optional AI sidecar plus the local clipboard history. Nothing here may be
+ * load-bearing: the sidecar runs on exactly one machine, and the extension has
+ * to work on every other one. So both network calls give up fast and fail to
+ * `null`/`false` rather than throwing.
+ */
 
 const BACKEND_URL = 'http://localhost:3001';
-const FETCH_TIMEOUT_MS = 5000;
+const FETCH_TIMEOUT_MS = 3000;
 
 // Custom error for backend connectivity issues
 export class BackendError extends Error {
@@ -19,16 +29,55 @@ async function fetchWithTimeout(url: string, options?: RequestInit, timeoutMs = 
     return response;
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new BackendError('Backend not responding (timeout)');
+      throw new BackendError('Local AI sidecar not responding (timeout)');
     }
-    throw new BackendError('Backend not reachable — is the service running?');
+    throw new BackendError('Local AI sidecar not reachable — is it running?');
   } finally {
     clearTimeout(timeout);
   }
 }
 
+/**
+ * kramdown verdicts, ported from `server/api/_lib/markdown.ts` so the bullet the
+ * user copies to the clipboard is byte-identical to the one a flush writes.
+ * A `|` turns the whole list item into a table; an unbalanced `<` or `>`
+ * destroys the link; `\[` renders as `[`, so escaping the pair is output-
+ * identical to the 15k bullets already in the corpus. Parentheses need no
+ * escaping at all — 24 real link texts contain them.
+ */
+function sanitizeText(value: string): string {
+  return value
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\|/g, '-')
+    .replace(/[<>]/g, '')
+    .replace(/[\[\]]/g, '\\$&');
+}
+
+/**
+ * kramdown handles balanced parens in a bare destination, and percent-encoding
+ * them is not guaranteed equivalent per RFC 3986 §2.2 — it can 404 a working
+ * link. The angle form is the escape hatch, used only when the bare form would
+ * actually break.
+ */
+function destination(url: string): string {
+  const trimmed = url.trim();
+  let depth = 0;
+  let balanced = true;
+  for (const ch of trimmed) {
+    if (ch === '(') depth++;
+    else if (ch === ')') {
+      depth--;
+      if (depth < 0) balanced = false;
+    }
+  }
+  if (depth !== 0) balanced = false;
+  return /[\s<>]/.test(trimmed) || !balanced ? `<${trimmed}>` : trimmed;
+}
+
 export class BlogService {
-  static async checkHealth(): Promise<boolean> {
+  /** Cheap probe so the UI can offer AI suggestions only when they can arrive. */
+  static async checkLocalAi(): Promise<boolean> {
     try {
       const response = await fetchWithTimeout(`${BACKEND_URL}/health`);
       return response.ok;
@@ -37,21 +86,13 @@ export class BlogService {
     }
   }
 
-  static async getCategories(): Promise<Category[]> {
-    const response = await fetchWithTimeout(`${BACKEND_URL}/api/categories`);
-    if (!response.ok) {
-      throw new BackendError(`Failed to fetch categories (${response.status})`);
-    }
-    return await response.json();
-  }
-
-  static async analyzeLink(url: string, title: string, selectedText?: string): Promise<AnalyzeLinkResponse | null> {
+  static async analyzeLink(url: string, title: string, selectedText?: string, forceRefresh = false): Promise<AnalyzeLinkResponse | null> {
     try {
       const response = await fetchWithTimeout(`${BACKEND_URL}/api/analyze-link`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, title, selectedText }),
-      }, 30000);
+        body: JSON.stringify({ url, title, selectedText, forceRefresh }),
+      });
 
       if (!response.ok) return null;
       const data = await response.json();
@@ -64,42 +105,13 @@ export class BlogService {
     }
   }
 
-  static async findCuratedInsightsFiles(): Promise<BlogPost[]> {
-    const response = await fetchWithTimeout(`${BACKEND_URL}/api/blog-files`);
-    if (!response.ok) {
-      throw new BackendError(`Failed to fetch blog files (${response.status})`);
-    }
-    return await response.json();
-  }
-
-  static formatLink(link: Link): string {
-    const sanitizeMarkdown = (text: string): string => {
-      return text.replace(/\|/g, '-').replace(/[\[\]()]/g, '\\$&');
-    };
-    const encodeUrlParens = (url: string): string => {
-      return url.replace(/\(/g, '%28').replace(/\)/g, '%29');
-    };
-    const displayText = sanitizeMarkdown(link.description?.trim() || link.selectedText?.trim() || link.title);
-    const sanitizedUrl = encodeUrlParens(link.url);
-    return `- [${displayText}](${sanitizedUrl}){:target="_blank"}`;
-  }
-
-  static async addLinkToBlog(link: Link, blogFile: BlogPost): Promise<void> {
-    const response = await fetchWithTimeout(`${BACKEND_URL}/api/add-link`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ link, blogFile }),
-    });
-
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
-      throw new BackendError(body.error || `Failed to add link (${response.status})`, response.status);
-    }
-
-    const result = await response.json();
-    if (!result.success) {
-      throw new BackendError(result.error || 'Backend reported failure');
-    }
+  /** The kramdown IAL must touch the closing paren: one space before `{:` and
+   *  kramdown emits the literal `{:target="_blank"}` into the page. */
+  static formatLink(link: { description?: string; selectedText?: string; title: string; url: string }): string {
+    const text = sanitizeText(
+      (link.description ?? '').trim() || (link.selectedText ?? '').trim() || link.title,
+    );
+    return `- [${text}](${destination(link.url)}){:target="_blank"}`;
   }
 
   static async saveLinkLocally(link: Link): Promise<void> {

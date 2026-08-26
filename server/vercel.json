@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "functions": {
+    "api/flush.ts": { "maxDuration": 60 },
+    "api/publish.ts": { "maxDuration": 60 },
+    "api/cron/flush.ts": { "maxDuration": 60 },
+    "api/**/*.ts": { "maxDuration": 30 }
+  },
+  "crons": [
+    { "path": "/api/cron/flush", "schedule": "0 6 * * *" }
+  ]
+}

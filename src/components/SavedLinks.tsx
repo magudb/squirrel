@@ -4,7 +4,7 @@ import { BlogService } from '../utils/blogService';
 import { Link } from '../types';
 
 export const SavedLinks: React.FC = () => {
-  const { savedLinks, categories, isLoading, backendDown } = useBlogData();
+  const { savedLinks, categories, isLoading } = useBlogData();
 
   const getCategoryName = (categoryId: string) => {
     const category = categories.find(c => c.id === categoryId);
@@ -51,11 +51,6 @@ export const SavedLinks: React.FC = () => {
 
   return (
     <div className="p-4">
-      {backendDown && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-md p-2 mb-3">
-          <p className="text-xs text-yellow-700">Backend offline — category names may not display correctly.</p>
-        </div>
-      )}
       <h3 className="text-lg font-semibold mb-4">Saved Links ({savedLinks.length})</h3>
       <div className="space-y-3 max-h-[400px] overflow-y-auto">
         {savedLinks.map((link) => (

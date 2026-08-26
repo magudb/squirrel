@@ -4,19 +4,9 @@
   "description": "This collects links and stores them for winter or the link blog",
   "version": "2.0",
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
-  "content_scripts": [
-    {
-      "matches": [
-        "http://*/*",
-        "https://*/*"
-      ],
-      "js": [
-        "content.js"
-      ]
-    }
-  ],
   "icons": {
     "16": "images/icon.png",
     "128": "images/icon.png"
@@ -29,12 +19,18 @@
     "activeTab",
     "storage",
     "notifications",
-    "scripting"
+    "scripting",
+    "alarms"
   ],
   "host_permissions": [
-    "http://*/*",
+    "http://localhost:3001/*"
+  ],
+  "optional_host_permissions": [
     "https://*/*"
   ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https: http://localhost:3001;"
+  },
   "commands": {
     "_execute_action": {
       "suggested_key": {

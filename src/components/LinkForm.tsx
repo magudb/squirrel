@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useBlogData } from '../hooks/useBlogData';
 import { useBlogMutation } from '../hooks/useBlogMutation';
 import { useAnalyzeLink } from '../hooks/useAnalyzeLink';
-import { TabInfo, Category, BlogPost } from '../types';
+import { TabInfo, Category } from '../types';
 
 interface LinkFormProps {
   tabInfo?: TabInfo;
@@ -23,12 +23,19 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
   const [title, setTitle] = useState(tabInfo?.title || '');
   const [selectedText, setSelectedText] = useState(tabInfo?.selectedText || '');
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
-  const [selectedBlogFile, setSelectedBlogFile] = useState<BlogPost | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [description, setDescription] = useState('');
   const { analyze, data: analyzeResult, isAnalyzing } = useAnalyzeLink();
 
-  const { categories, blogFiles, isLoading, errorMessage: dataError, backendDown, refetch } = useBlogData();
+  const {
+    categories,
+    isLoading,
+    errorMessage: dataError,
+    notConfigured,
+    serviceUnreachable,
+    aiSidecarAvailable,
+    refetch,
+  } = useBlogData();
   const { addLink, isLoading: isAddingLink, errorMessage: mutationError, reset: resetMutation } = useBlogMutation();
 
   useEffect(() => {
@@ -44,12 +51,6 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
       setSelectedCategory(categories[0]);
     }
   }, [categories, selectedCategory]);
-
-  useEffect(() => {
-    if (blogFiles.length > 0 && !selectedBlogFile) {
-      setSelectedBlogFile(blogFiles[0]);
-    }
-  }, [blogFiles, selectedBlogFile]);
 
   useEffect(() => {
     if (tabInfo?.url && tabInfo.url.startsWith('http')) {
@@ -78,8 +79,8 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
     setValidationError(null);
     resetMutation();
 
-    if (!url || !title || !selectedCategory || !selectedBlogFile) {
-      const missing = [!url && 'url', !title && 'title', !selectedCategory && 'category', !selectedBlogFile && 'blogFile'].filter(Boolean);
+    if (!url || !title || !selectedCategory) {
+      const missing = [!url && 'url', !title && 'title', !selectedCategory && 'category'].filter(Boolean);
       setValidationError(`Missing: ${missing.join(', ')}`);
       return;
     }
@@ -89,17 +90,20 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
       return;
     }
 
-    const link = {
-      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    addLink({
+      id: crypto.randomUUID(),
       url,
       title,
       selectedText: selectedText.trim() || undefined,
       description: description.trim() || undefined,
       category: selectedCategory.id,
       timestamp: Date.now()
-    };
+    });
+  };
 
-    addLink({ link, blogPost: selectedBlogFile });
+  const handleRegenerate = () => {
+    if (!url || !title || isAnalyzing) return;
+    analyze({ url, title, selectedText, forceRefresh: true });
   };
 
   if (isLoading) {
@@ -110,37 +114,28 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
     );
   }
 
-  if (backendDown) {
+  // Nothing here can reach anywhere until the service is named, and the fix is
+  // one tab away rather than anything to retry.
+  if (notConfigured) {
     return (
       <div className="p-4">
-        <div className="bg-red-50 border border-red-200 rounded-md p-4">
+        <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
           <div className="flex items-start">
-            <svg className="w-5 h-5 text-red-400 mr-2 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <svg className="w-5 h-5 text-blue-400 mr-2 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <div>
-              <p className="text-sm font-medium text-red-800">Backend not reachable</p>
-              <p className="text-xs text-red-600 mt-1">
-                The squirrel-backend service doesn't seem to be running.
+              <p className="text-sm font-medium text-blue-800">Squirrel isn't set up yet</p>
+              <p className="text-xs text-blue-700 mt-1">
+                Open the <span className="font-medium">Settings</span> tab and add your Squirrel
+                service URL and token. Saved links go to the service, which writes them to the blog.
               </p>
-              <p className="text-xs text-gray-500 mt-2 font-mono">
-                sudo systemctl restart squirrel-backend
-              </p>
-              <button
-                onClick={refetch}
-                className="mt-3 text-sm text-red-700 underline hover:text-red-900"
-              >
-                Retry connection
-              </button>
             </div>
           </div>
         </div>
       </div>
     );
   }
-
-  // Show a non-blocking warning if there's a data fetch error but we have some data
-  const showDataWarning = dataError && !backendDown;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4 p-4">
@@ -160,10 +155,21 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
         </div>
       )}
 
-      {/* Data warning (partial failure) */}
-      {showDataWarning && (
+      {/* Service down: a warning, not a blocker — the outbox holds the link */}
+      {serviceUnreachable && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
-          <p className="text-xs text-yellow-700">{dataError}</p>
+          <p className="text-sm font-medium text-yellow-800">Squirrel service is not responding</p>
+          <p className="text-xs text-yellow-700 mt-1">
+            Saving still works — the link is queued and sent as soon as the service answers.
+          </p>
+          {dataError && <p className="text-xs text-yellow-600 mt-1">{dataError}</p>}
+          <button
+            type="button"
+            onClick={refetch}
+            className="mt-2 text-xs text-yellow-800 underline hover:text-yellow-900"
+          >
+            Try again
+          </button>
         </div>
       )}
 
@@ -212,9 +218,34 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
       </div>
 
       <div>
-        <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
-          Description {isAnalyzing && <span className="text-blue-500 text-xs ml-1">(AI analyzing...)</span>}
-        </label>
+        <div className="flex items-center justify-between mb-1">
+          <label htmlFor="description" className="block text-sm font-medium text-gray-700">
+            Description {isAnalyzing && <span className="text-blue-500 text-xs ml-1">(AI analyzing...)</span>}
+            {!isAnalyzing && analyzeResult?.cached && (
+              <span className="text-gray-400 text-xs ml-1">(cached)</span>
+            )}
+            {!isAnalyzing && aiSidecarAvailable === false && (
+              <span
+                className="text-gray-400 text-xs ml-1"
+                title="The local AI sidecar isn't running. Everything else works; write the description yourself."
+              >
+                (AI suggestions unavailable)
+              </span>
+            )}
+          </label>
+          <button
+            type="button"
+            onClick={handleRegenerate}
+            disabled={isAnalyzing || !url || !title}
+            title="Regenerate the AI summary and category"
+            className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+          >
+            <svg className={`w-3 h-3 ${isAnalyzing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Regenerate
+          </button>
+        </div>
         <textarea
           id="description"
           value={description}
@@ -248,29 +279,6 @@ export const LinkForm: React.FC<LinkFormProps> = ({ tabInfo }) => {
           {categories.map((category) => (
             <option key={category.id} value={category.id}>
               {category.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div>
-        <label htmlFor="blogFile" className="block text-sm font-medium text-gray-700 mb-1">
-          Blog File *
-        </label>
-        <select
-          id="blogFile"
-          value={selectedBlogFile?.path || ''}
-          onChange={(e) => {
-            const blogFile = blogFiles.find(f => f.path === e.target.value);
-            setSelectedBlogFile(blogFile || null);
-          }}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          required
-        >
-          <option value="">Select a blog file</option>
-          {blogFiles.map((file) => (
-            <option key={file.path} value={file.path}>
-              {file.filename} - {file.title}
             </option>
           ))}
         </select>

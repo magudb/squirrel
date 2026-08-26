@@ -1,0 +1,24 @@
+{
+  "name": "squirrel-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Vercel-hosted link buffer for the Squirrel extension. Buffers links in Redis, flushes them into a Jekyll draft on GitHub, and publishes drafts to _posts.",
+  "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@upstash/redis": "^1.38.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@vercel/node": "^7.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
