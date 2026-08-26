@@ -69,7 +69,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   const request = asRequest(message);
-  if (!request) return false;
+  if (!request) {
+    // Answer rather than falling through. Returning without calling
+    // sendResponse closes the channel and the caller just sees `undefined`,
+    // which it can only report as a generic refusal — the exact shape of a
+    // stale worker still running the previous protocol after a rebuild, and
+    // indistinguishable from a malformed link until you go read this file.
+    sendResponse({
+      ok: false,
+      error:
+        `Unrecognised message: ${describeMessage(message)}. ` +
+        'If the extension was rebuilt, reload it at chrome://extensions so the ' +
+        'service worker picks up the new code.',
+    });
+    return false;
+  }
 
   switch (request.type) {
     case 'QUEUE_LINK':
@@ -447,6 +461,13 @@ function asRequest(message: unknown): SwRequest | null {
   if (typeof url !== 'string' || url === '' || typeof title !== 'string') return null;
 
   return { type, link: link as NewLink };
+}
+
+/** Enough of a rejected message to identify it, without logging link contents. */
+function describeMessage(message: unknown): string {
+  if (typeof message !== 'object' || message === null) return typeof message;
+  const { type } = message as { type?: unknown };
+  return typeof type === 'string' ? `type=${type}` : 'no type field';
 }
 
 function describe(error: unknown): string {
