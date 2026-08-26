@@ -76,3 +76,6 @@ $RECYCLE.BIN/
 .claude/
 dist/
 .grepai/
+
+# Vercel CLI: build output and the linked project id
+.vercel/
