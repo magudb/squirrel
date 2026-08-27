@@ -19,6 +19,12 @@ env:
   VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
   VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
   VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+  # The stable production alias, which is what the extension talks to and the
+  # only URL worth asserting on. `vercel deploy` prints the per-deployment URL
+  # instead, and Deployment Protection answers those with a 302 to
+  # vercel.com/sso-api — so smoke-testing the deploy output fails every run
+  # while the site is perfectly healthy.
+  PRODUCTION_URL: https://squirrel-eight.vercel.app
 
 jobs:
   test:
@@ -100,7 +106,14 @@ jobs:
 
       - name: Smoke test
         run: |
-          url="${{ steps.deploy.outputs.url }}"
+          url="$PRODUCTION_URL"
+          # The alias needs a moment to swing over to the new deployment.
+          for i in 1 2 3 4 5; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$url/api/health" || true)
+            [ "$code" = "200" ] && break
+            echo "attempt $i: /api/health -> $code, retrying"
+            sleep 5
+          done
           code=$(curl -s -o /tmp/health.json -w '%{http_code}' --max-time 30 "$url/api/health")
           cat /tmp/health.json || true
           echo
