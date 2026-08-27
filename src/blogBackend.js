@@ -328,7 +328,7 @@ async function fetchPageContent(url) {
 // ---------------------------------------------------------------------------
 
 const AI_PROVIDER = (process.env.SQUIRREL_AI_PROVIDER || 'claude').toLowerCase();
-const CLAUDE_MODEL = process.env.SQUIRREL_CLAUDE_MODEL || 'sonnet';
+const CLAUDE_MODEL = process.env.SQUIRREL_CLAUDE_MODEL || process.env.CLAUDE_MODEL || 'sonnet';
 const CODEX_MODEL = process.env.SQUIRREL_CODEX_MODEL || '';
 
 /**
@@ -337,7 +337,12 @@ const CODEX_MODEL = process.env.SQUIRREL_CODEX_MODEL || '';
  * we ask mise for the real path whenever it can tell us.
  */
 function resolveCliBin(name) {
-  const override = process.env[`SQUIRREL_${name.toUpperCase()}_BIN`];
+  // `CLAUDE_BIN` is the name the launchd plist and the systemd unit already
+  // set, so it stays supported: renaming it would silently strip the override
+  // on the machines those install scripts configured, and the fallback lookup
+  // below does not work everywhere mise is absent.
+  const override =
+    process.env[`SQUIRREL_${name.toUpperCase()}_BIN`] || process.env[`${name.toUpperCase()}_BIN`];
   if (override) return override;
 
   try {

@@ -45,23 +45,40 @@ A modern browser extension for collecting and organizing links with automatic bl
 
 ### Blog Integration
 
-The extension can automatically update your Jekyll blog drafts located at:
-```
-/home/mlu/Documents/project/magudb.github.io/_drafts
-```
+The backend updates your Jekyll blog drafts. The drafts directory defaults to:
+
+- Linux: `~/Documents/project/magudb.github.io/_drafts`
+- macOS: `~/Documents/projects/magudb.github.io/_drafts`
+
+Override per machine with `SQUIRREL_DRAFTS_DIR`. Override the `claude` CLI location with `CLAUDE_BIN` (defaults to `claude` on `PATH`).
 
 #### Option 1: Backend Service (Recommended)
 
-1. **Start the backend service**:
-   ```bash
-   npm run backend
-   ```
-   This starts a local Node.js service on `http://localhost:3001`
+Run manually for testing:
+```bash
+npm run backend
+```
+This starts a local Node.js service on `http://localhost:3001`.
 
-2. The extension will automatically use the backend for:
-   - Reading blog files
-   - Adding links to appropriate sections
-   - Maintaining category organization
+##### Run as a service
+
+**Linux (systemd)** — `squirrel-backend.service`:
+```bash
+sudo cp squirrel-backend.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now squirrel-backend
+journalctl -u squirrel-backend -f
+```
+
+**macOS (launchd)** — `launchd/com.squirrel.backend.plist`:
+```bash
+./launchd/install.sh         # auto-detects node, claude, repo path; loads the agent
+launchctl print gui/$(id -u)/com.squirrel.backend   # status
+tail -f ~/Library/Logs/squirrel-backend.{out,err}.log
+./launchd/uninstall.sh       # remove
+```
+
+The installer substitutes the current node path (`$(command -v node)`), `claude` path, and `$HOME`-based drafts directory into the plist before loading it. Re-run `install.sh` after switching node versions (e.g. via nvm) so the plist points at the new binary.
 
 #### Option 2: Extension-Only Mode
 

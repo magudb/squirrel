@@ -124,10 +124,15 @@ function AppContent() {
       </div>
 
       {/* Navigation */}
-      <div className="flex border-b">
+      <div className="flex border-b" role="tablist" aria-label="Squirrel sections">
         {TABS.map((tab) => (
           <button
             key={tab.id}
+            type="button"
+            role="tab"
+            id={`tab-${tab.id}`}
+            aria-selected={activeTab === tab.id}
+            aria-controls={`panel-${tab.id}`}
             onClick={() => setActiveTab(tab.id)}
             className={`flex-1 py-3 px-2 text-center text-sm font-medium transition-colors ${
               activeTab === tab.id
@@ -150,12 +155,24 @@ function AppContent() {
           outbox should not cost you the description. The other tabs own no
           state worth preserving, so they still mount on demand.
         */}
-        <div hidden={activeTab !== 'add'}>
+        <div role="tabpanel" id="panel-add" aria-labelledby="tab-add" hidden={activeTab !== 'add'}>
           <LinkForm tabInfo={tabInfo ?? undefined} />
         </div>
-        {activeTab === 'queue' && <Queue />}
-        {activeTab === 'saved' && <SavedLinks />}
-        {activeTab === 'settings' && <Settings />}
+        {activeTab === 'queue' && (
+          <div role="tabpanel" id="panel-queue" aria-labelledby="tab-queue">
+            <Queue />
+          </div>
+        )}
+        {activeTab === 'saved' && (
+          <div role="tabpanel" id="panel-saved" aria-labelledby="tab-saved">
+            <SavedLinks />
+          </div>
+        )}
+        {activeTab === 'settings' && (
+          <div role="tabpanel" id="panel-settings" aria-labelledby="tab-settings">
+            <Settings />
+          </div>
+        )}
       </div>
 
       {/* Footer */}

@@ -1,7 +1,13 @@
+import { useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSquirrelCategories, useSquirrelConfig } from './useSquirrel';
 import { BlogService } from '../utils/blogService';
-import { Category } from '../types';
+import { Category, Link } from '../types';
+
+// Hoisted so the `data ?? fallback` results keep a stable identity across
+// renders. Consumers use these arrays as effect dependencies, and a fresh []
+// each render re-runs those effects forever.
+const EMPTY_LINKS: Link[] = [];
 
 /**
  * The section list, duplicated from `server/api/_lib/categories.ts`.
@@ -59,9 +65,16 @@ export const useBlogData = () => {
     ? categoriesQuery.error?.message ?? 'The Squirrel service is not responding.'
     : savedLinksQuery.error?.message ?? null;
 
+  const refetchCategories = categoriesQuery.refetch;
+  const refetchSavedLinks = savedLinksQuery.refetch;
+  const refetch = useCallback(() => {
+    refetchCategories();
+    refetchSavedLinks();
+  }, [refetchCategories, refetchSavedLinks]);
+
   return {
     categories: categoriesQuery.data ?? FALLBACK_CATEGORIES,
-    savedLinks: savedLinksQuery.data ?? [],
+    savedLinks: savedLinksQuery.data ?? EMPTY_LINKS,
     // Only the config gates the form. Waiting on categories would hold the UI
     // behind a spinner for the full retry budget of an unreachable service —
     // the one case where the form most needs to be usable.
@@ -74,9 +87,6 @@ export const useBlogData = () => {
     serviceUnreachable,
     /** Undefined until the probe answers, so the UI need not flash a verdict. */
     aiSidecarAvailable: localAiQuery.data,
-    refetch: () => {
-      categoriesQuery.refetch();
-      savedLinksQuery.refetch();
-    },
+    refetch,
   };
 };
