@@ -85,3 +85,6 @@ dist/
 .env.*
 !.env.example
 .env*
+
+# Agent tooling docs injected into the workspace, not project source
+.agents/
