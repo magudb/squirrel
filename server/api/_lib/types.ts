@@ -116,4 +116,11 @@ export interface PublishResult {
   skipped: number;
   unroutable: number;
   prunedSections: string[];
+  /**
+   * Front-matter fields rewritten by this publish, in the order the patch named
+   * them. Optional because a client may be talking to a deployment that predates
+   * metadata writing, and an absent field there must not read as "nothing was
+   * written" when the real answer is "this service cannot say".
+   */
+  metaUpdated?: string[];
 }

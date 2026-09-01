@@ -128,6 +128,48 @@ export interface PublishResult {
   skipped: number;
   unroutable: number;
   prunedSections: string[];
+  /**
+   * Front-matter fields this publish rewrote. Optional because a deployment
+   * that predates metadata writing does not send it, and an absent field there
+   * means "this service cannot say", not "nothing was written".
+   */
+  metaUpdated?: string[];
+}
+
+/**
+ * The front matter a publish may rewrite, and what the local review proposes.
+ *
+ * The service validates every value again before it writes — these are the same
+ * three scalars `server/api/_lib/markdown.ts` knows how to patch.
+ */
+export interface PublishMeta {
+  title?: string;
+  description?: string;
+  keywords?: string;
+}
+
+/** One draft with its body, from `GET /api/drafts?id=`. */
+export interface DraftContent {
+  draft: DraftRef;
+  content: string;
+}
+
+/**
+ * The local sidecar's answer about a draft's metadata.
+ *
+ * `verdict` is the sidecar's own comparison of what it proposes against what
+ * the file says, not the model's self-assessment — a model that rewrites the
+ * title while reporting "ok" is common enough that the comparison is the more
+ * honest signal.
+ */
+export interface MetadataReview {
+  verdict: 'ok' | 'mismatch';
+  title: string;
+  description: string;
+  keywords: string;
+  /** One sentence on what was wrong, or what was confirmed. */
+  notes: string;
+  cached?: boolean;
 }
 
 /** The body of `POST /api/links`. No `id` and no `addedAt` — the server mints both. */

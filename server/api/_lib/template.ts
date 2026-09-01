@@ -26,6 +26,7 @@
  * bullet.
  */
 
+import { escapeYamlDoubleQuoted } from './markdown.js';
 import { HttpError } from './http.js';
 
 /**
@@ -34,6 +35,15 @@ import { HttpError } from './http.js';
  * capped at 80 by `slugify` regardless, so a longer title only affects display.
  */
 const MAX_TITLE_LENGTH = 200;
+
+/**
+ * The publish-time fields. `description` is the one Jekyll renders into the
+ * page's meta tag, where search engines truncate around 160 — 300 leaves room
+ * to be a little long without letting an AI answer run to an essay. `keywords`
+ * is a comma-separated list and stays on one readable line.
+ */
+const MAX_DESCRIPTION_LENGTH = 300;
+const MAX_KEYWORDS_LENGTH = 200;
 
 /** Newlines, tabs, NUL and every other control byte. See `normalizeDraftTitle`. */
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
@@ -73,10 +83,6 @@ const SECTIONS: ReadonlyArray<{ anchor: string; heading: string }> = Object.free
  *  that want to report which sections a new draft will accept links into. */
 export const TEMPLATE_ANCHORS: readonly string[] = Object.freeze(SECTIONS.map((s) => s.anchor));
 
-function badTitle(message: string): HttpError {
-  return new HttpError(400, message, 'bad_title');
-}
-
 /**
  * THE YAML TRAP, and the decision: **escape**, not reject, for the two characters
  * that YAML itself defines an escape for — `\` and `"`. A double quote closes
@@ -88,51 +94,87 @@ function badTitle(message: string): HttpError {
  * and nothing else. So `frontMatterTitle(newDraftBody(t)) === t` holds, which is
  * what `GET /api/drafts` shows the user and what a later publish slugifies.
  *
- * Backslash first, or the backslash pass would escape the backslashes the quote
- * pass just added.
- */
-function escapeYamlDoubleQuoted(value: string): string {
-  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-}
-
-/**
+ * `escapeYamlDoubleQuoted` itself lives in markdown.ts, next to the `unquote` it
+ * is the inverse of — a publish rewrites these same scalars, and two copies of
+ * an escaping rule is one copy too many.
+ *
  * The characters that are NOT escaped are rejected instead, because escaping
  * them would not round-trip:
  *
  * - A newline or any other control character cannot survive a single-line
  *   double-quoted scalar. YAML spells one `\n`, but `unquote()` only reverses
- *   `\"` and `\\`, so the title would come back with a literal backslash-n in
+ *   `\"` and `\\`, so the value would come back with a literal backslash-n in
  *   it — and a raw newline would end the scalar and inject an arbitrary line
  *   into the front matter.
  * - `<` and `>` are legal YAML, but Jekyll renders `page.title` into the layout
  *   unescaped, so they would be markup on the published page rather than text.
  *   `sanitizeText` in markdown.ts strips them from bullet text for the same
- *   reason; here a 400 is friendlier than silently editing the user's title.
+ *   reason; here a 400 is friendlier than silently editing the user's words.
  *
  * Ampersands, apostrophes, colons and commas are all fine inside a double-quoted
  * scalar and are left exactly as typed — real titles are full of them
- * ("Architecture, Development & Software development practices").
+ * ("Architecture, Development & Software development practices"), and so is a
+ * keyword list.
  */
-export function normalizeDraftTitle(raw: unknown): string {
+function normalizeScalar(
+  raw: unknown,
+  field: { label: string; code: string; maxLength: number; allowEmpty?: boolean },
+): string {
+  const Label = field.label[0].toUpperCase() + field.label.slice(1);
+  const fail = (message: string): HttpError => new HttpError(400, message, field.code);
+
   if (typeof raw !== 'string') {
-    throw badTitle('A title is required');
+    throw fail(`A ${field.label} is required`);
   }
-  // Trimmed first, so a title pasted with a trailing newline is accepted rather
+  // Trimmed first, so a value pasted with a trailing newline is accepted rather
   // than rejected by the control-character rule below.
-  const title = raw.trim();
-  if (title === '') {
-    throw badTitle('A title is required');
+  const value = raw.trim();
+  if (value === '') {
+    // Only a title is mandatory. Blanking a description is a real edit: the
+    // template ships one empty, and a publish may legitimately put it back.
+    if (field.allowEmpty === true) return '';
+    throw fail(`A ${field.label} is required`);
   }
-  if (title.length > MAX_TITLE_LENGTH) {
-    throw badTitle(`Title must be at most ${MAX_TITLE_LENGTH} characters`);
+  if (value.length > field.maxLength) {
+    throw fail(`${Label} must be at most ${field.maxLength} characters`);
   }
-  if (CONTROL_CHARS.test(title)) {
-    throw badTitle('Title must be a single line with no control characters');
+  if (CONTROL_CHARS.test(value)) {
+    throw fail(`${Label} must be a single line with no control characters`);
   }
-  if (/[<>]/.test(title)) {
-    throw badTitle('Title must not contain < or >');
+  if (/[<>]/.test(value)) {
+    throw fail(`${Label} must not contain < or >`);
   }
-  return title;
+  return value;
+}
+
+export function normalizeDraftTitle(raw: unknown): string {
+  return normalizeScalar(raw, { label: 'title', code: 'bad_title', maxLength: MAX_TITLE_LENGTH });
+}
+
+/**
+ * The two scalars a publish may rewrite besides the title.
+ *
+ * They go through the same filter as a title because they land in the same
+ * place — a double-quoted YAML scalar in a file whose malformed front matter
+ * fails the build of the whole site — and because their text now arrives from
+ * an AI reading a page, which is the least trusted input this service has.
+ */
+export function normalizeDescription(raw: unknown): string {
+  return normalizeScalar(raw, {
+    label: 'description',
+    code: 'bad_description',
+    maxLength: MAX_DESCRIPTION_LENGTH,
+    allowEmpty: true,
+  });
+}
+
+export function normalizeKeywords(raw: unknown): string {
+  return normalizeScalar(raw, {
+    label: 'keywords',
+    code: 'bad_keywords',
+    maxLength: MAX_KEYWORDS_LENGTH,
+    allowEmpty: true,
+  });
 }
 
 /**

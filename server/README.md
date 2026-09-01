@@ -132,7 +132,7 @@ interchangeable in either direction.
 | PATCH | `/api/links/:id` | Edit title, description, category or url. |
 | DELETE | `/api/links/:id` | Drop a buffered link. |
 | POST | `/api/flush` | Write the buffer into the target draft. |
-| GET | `/api/drafts` | Candidate drafts, by opaque id. |
+| GET | `/api/drafts` | Candidate drafts, by opaque id. `?id=` returns one with its body. |
 | GET/PUT | `/api/target` | Read or set the draft flushes write into. |
 | POST | `/api/publish` | Draft → `_posts/`, one commit. |
 | GET | `/api/cron/flush` | Vercel Cron entry point. |
@@ -145,6 +145,38 @@ already delivered.
 Publishing takes a `draftId`, never a path, and builds the `_posts/` destination
 itself from the draft's front-matter title. A caller cannot name the file that
 gets written.
+
+### Metadata at publish time
+
+The draft template ships `description` and `keywords` empty for the author to
+fill in at publish time, and a digest's title is written in week one and read
+three months later — by which point the links under it have wandered. So
+`POST /api/publish` takes an optional `meta`:
+
+```json
+{ "draftId": "…", "meta": { "title": "…", "description": "…", "keywords": "…" } }
+```
+
+Those three scalars are rewritten in the front matter **inside the same commit
+that creates the post**. A second commit would break the property the whole
+module is built on: the blog's announce job keys on files ADDED under `_posts/`,
+so a post created first and corrected after is announced with the draft's
+metadata.
+
+- Every value goes through the same normaliser as a new draft's title — control
+  characters, `<`, `>` and over-long values are 400s, and `"` and `\` are
+  escaped. A malformed scalar fails the build of the entire blog, and this text
+  now arrives from an AI that just read an arbitrary web page.
+- `meta.title` also names the destination file, and therefore the post's URL. An
+  explicit `slug` still wins.
+- A draft with no front matter is a 409 `no_front_matter`, raised before the
+  buffer is claimed. `_drafts/2025-06-20-on AI.md` is that case.
+- The response carries `metaUpdated`, the fields actually written.
+
+The judgement itself is not made here. `GET /api/drafts?id=` hands the draft to
+the extension, the local AI sidecar reads the links and proposes the metadata,
+and the author edits it before it is sent back. This service only validates and
+writes.
 
 ## Flush timing
 
@@ -273,11 +305,19 @@ curl -H "Authorization: Bearer $CRON_SECRET" \
 
 ## What still runs locally
 
-`src/blogBackend.js` in the parent repo is now only an optional AI sidecar on
-`localhost:3001`, exposing `/health` and `/api/analyze-link`. It shells out to
-the local `claude` CLI to suggest a category and description. It is genuinely
-optional: with it absent the extension works exactly the same, minus the
-auto-suggestion. No AI key ever reaches Vercel.
+`src/blogBackend.js` in the parent repo is an AI sidecar on `localhost:3001`,
+exposing `/health`, `/api/analyze-link` and `/api/review-metadata`. It shells out
+to the local `claude` CLI (or `codex`); no AI key ever reaches Vercel.
+
+`/api/analyze-link` is genuinely optional — with it absent the extension works
+exactly the same, minus the auto-suggestion.
+
+`/api/review-metadata` is not. It reads a draft's links and judges whether the
+front matter still describes them, and the popup blocks publishing until it has
+answered, so an issue cannot ship with the description of a different one. That
+makes publishing a thing you do from a machine running the sidecar. A review of
+a real fifteen-link digest takes about 40s, which is why the extension gives it
+its own 120s budget rather than the 30s an `analyze-link` gets.
 
 ## Notes for whoever touches this next
 

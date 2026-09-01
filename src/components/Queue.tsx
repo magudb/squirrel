@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   useCreateDraft,
   useDrafts,
@@ -8,8 +8,10 @@ import {
   useSquirrelConfig,
   useStatus,
 } from '../hooks/useSquirrel';
+import { useMetadataReview } from '../hooks/useMetadataReview';
 import { SquirrelApiError } from '../utils/squirrelApi';
-import type { Category, FlushResult, LinkPatch, PendingLink } from '../types';
+import { BackendError } from '../utils/blogService';
+import type { Category, FlushResult, LinkPatch, PendingLink, PublishMeta } from '../types';
 
 function formatAge(addedAt: number): string {
   const minutes = Math.max(0, Math.round((Date.now() - addedAt) / 60_000));
@@ -26,8 +28,60 @@ function errorText(error: unknown): string {
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * One front-matter field, with what the file says today underneath it when the
+ * two differ. Showing the old value matters more than it looks: the title drives
+ * the post's filename, so "this is being changed" is the thing to notice before
+ * the commit, not after.
+ */
+const MetaField: React.FC<{
+  id: string;
+  label: string;
+  hint: string;
+  value: string;
+  current: string;
+  maxLength: number;
+  rows?: number;
+  onChange: (value: string) => void;
+}> = ({ id, label, hint, value, current, maxLength, rows, onChange }) => (
+  <div>
+    <label htmlFor={id} className="block text-xs font-medium text-gray-700">
+      {label}
+    </label>
+    {rows === undefined ? (
+      <input
+        id={id}
+        type="text"
+        value={value}
+        maxLength={maxLength}
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-1 w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+    ) : (
+      <textarea
+        id={id}
+        value={value}
+        rows={rows}
+        maxLength={maxLength}
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-1 w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+    )}
+    {value.trim() !== current.trim() && (
+      <p className="mt-1 text-xs text-gray-500">
+        Was: {current.trim() === '' ? <em>empty</em> : <span className="italic">{current}</span>}
+      </p>
+    )}
+    <p className="mt-0.5 text-xs text-gray-400">{hint}</p>
+  </div>
+);
+
 /** Kept in step with MAX_TITLE_LENGTH in server/api/_lib/template.ts. */
 const MAX_TITLE_LENGTH = 200;
+
+/** The other two caps the service enforces on front-matter scalars. */
+const MAX_DESCRIPTION_LENGTH = 300;
+const MAX_KEYWORDS_LENGTH = 200;
 
 /**
  * Today on the user's calendar, not the service's.
@@ -524,11 +578,37 @@ export const Queue: React.FC = () => {
   const { drafts, target, setTarget } = useDrafts();
   const categoriesQuery = useSquirrelCategories();
   const publish = usePublish();
+  const metadata = useMetadataReview();
 
   const [publishDraftId, setPublishDraftId] = useState('');
   const [prune, setPrune] = useState(false);
   const [confirmingPublish, setConfirmingPublish] = useState(false);
   const [creatingDraft, setCreatingDraft] = useState(false);
+  // Seeded from the review, then the user's to edit. The three fields together
+  // are what the post ships with — not a diff against the draft — so what is in
+  // these boxes at the moment of the click is exactly what gets committed.
+  const [meta, setMeta] = useState<Required<PublishMeta>>({
+    title: '',
+    description: '',
+    keywords: '',
+  });
+
+  const reviewed = metadata.data;
+  const reviewIsForSelection = reviewed?.draftId === publishDraftId;
+  // The gate. A post is created with its front matter, so an unreviewed publish
+  // is the one thing this screen cannot take back.
+  const canPublish = reviewIsForSelection && !metadata.isReviewing && meta.title.trim() !== '';
+  const titleChanged =
+    reviewIsForSelection && meta.title.trim() !== reviewed.current.title.trim();
+
+  useEffect(() => {
+    if (reviewed === null) return;
+    setMeta({
+      title: reviewed.review.title,
+      description: reviewed.review.description,
+      keywords: reviewed.review.keywords,
+    });
+  }, [reviewed]);
 
   const categories = categoriesQuery.data ?? [];
   const lastFlushError = status.data?.lastFlush?.error;
@@ -698,6 +778,9 @@ export const Queue: React.FC = () => {
             setPublishDraftId(e.target.value);
             setConfirmingPublish(false);
             publish.reset();
+            // A review belongs to the draft it read. Keeping it across a change
+            // of selection would offer one issue's metadata for another's post.
+            metadata.reset();
           }}
           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
@@ -720,9 +803,129 @@ export const Queue: React.FC = () => {
         {selectedPublishDraft && (
           <>
             <p className="text-xs text-gray-500">
-              The service names the post from the draft's title. The file it created is shown once the
-              commit lands.
+              The service names the post from its title. The file it created is shown once the commit
+              lands.
             </p>
+
+            <div className="border border-gray-200 rounded-md p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-semibold text-gray-800">Metadata check</h4>
+                {reviewIsForSelection && !metadata.isReviewing && (
+                  <button
+                    type="button"
+                    onClick={() => metadata.review(publishDraftId, true)}
+                    className="text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    Re-run
+                  </button>
+                )}
+              </div>
+
+              {!reviewIsForSelection && !metadata.isReviewing && metadata.error === null && (
+                <>
+                  <p className="text-xs text-gray-600">
+                    The local AI reads the links this issue actually collected and checks that the
+                    title, description and keywords still describe them.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => metadata.review(publishDraftId)}
+                    className="w-full border border-gray-300 text-gray-700 text-xs py-1.5 px-3 rounded-md hover:border-blue-500 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    Review metadata
+                  </button>
+                </>
+              )}
+
+              {metadata.isReviewing && (
+                <p className="text-xs text-gray-600" role="status">
+                  Reading the issue and checking its front matter — this takes about a minute.
+                </p>
+              )}
+
+              {metadata.error !== null && !metadata.isReviewing && (
+                <div className="bg-red-50 border border-red-200 rounded-md p-2">
+                  <p className="text-xs font-medium text-red-800">Metadata check failed</p>
+                  <p className="text-xs text-red-600 mt-1">{errorText(metadata.error)}</p>
+                  {/*
+                    Only when the sidecar is what failed. The check also fetches
+                    the draft from the service, and telling someone to start a
+                    process that is already running sends them after the wrong
+                    machine.
+                  */}
+                  {metadata.error instanceof BackendError && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      The review runs on this machine's sidecar. Start it with{' '}
+                      <span className="font-mono">npm run backend</span> and try again.
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-500 mt-1">
+                    Publishing stays blocked until the check has run.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => metadata.review(publishDraftId)}
+                    className="mt-2 text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    Try again
+                  </button>
+                </div>
+              )}
+
+              {reviewIsForSelection && !metadata.isReviewing && (
+                <>
+                  <p
+                    className={`text-xs rounded-md p-2 ${
+                      reviewed.review.verdict === 'ok'
+                        ? 'bg-green-50 border border-green-200 text-green-800'
+                        : 'bg-amber-50 border border-amber-200 text-amber-800'
+                    }`}
+                  >
+                    {reviewed.review.verdict === 'ok'
+                      ? 'The front matter matches the links.'
+                      : 'The front matter does not match the links.'}{' '}
+                    {reviewed.review.notes}
+                  </p>
+
+                  <MetaField
+                    id="meta-title"
+                    label="Title"
+                    hint="Names the post file, and therefore its URL."
+                    value={meta.title}
+                    current={reviewed.current.title}
+                    maxLength={MAX_TITLE_LENGTH}
+                    onChange={(title) => setMeta((previous) => ({ ...previous, title }))}
+                  />
+                  <MetaField
+                    id="meta-description"
+                    label="Description"
+                    hint="The meta description a reader sees in search results."
+                    value={meta.description}
+                    current={reviewed.current.description}
+                    maxLength={MAX_DESCRIPTION_LENGTH}
+                    rows={3}
+                    onChange={(description) =>
+                      setMeta((previous) => ({ ...previous, description }))
+                    }
+                  />
+                  <MetaField
+                    id="meta-keywords"
+                    label="Keywords"
+                    hint="Comma-separated."
+                    value={meta.keywords}
+                    current={reviewed.current.keywords}
+                    maxLength={MAX_KEYWORDS_LENGTH}
+                    onChange={(keywords) => setMeta((previous) => ({ ...previous, keywords }))}
+                  />
+
+                  {meta.title.trim() === '' && (
+                    <p className="text-xs text-red-600">
+                      A title is required — the post's filename is built from it.
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
 
             <label className="flex items-center space-x-2 text-xs text-gray-600">
               <input
@@ -735,22 +938,37 @@ export const Queue: React.FC = () => {
             </label>
 
             {!confirmingPublish ? (
-              <button
-                type="button"
-                onClick={() => setConfirmingPublish(true)}
-                className="w-full border border-blue-600 text-blue-600 py-2 px-4 rounded-md hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                Publish...
-              </button>
+              <>
+                <button
+                  type="button"
+                  disabled={!canPublish}
+                  onClick={() => setConfirmingPublish(true)}
+                  className="w-full border border-blue-600 text-blue-600 py-2 px-4 rounded-md hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-40 disabled:hover:bg-transparent"
+                >
+                  Publish...
+                </button>
+                {!canPublish && (
+                  <p className="text-xs text-gray-500">
+                    {reviewIsForSelection
+                      ? 'Give the post a title to publish.'
+                      : 'Run the metadata check first — a post ships with the front matter it is created with.'}
+                  </p>
+                )}
+              </>
             ) : (
               <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
                 <p className="text-sm font-medium text-yellow-800">This goes live</p>
                 <p className="text-xs text-yellow-700 mt-1">
-                  Buffered links are folded in,{' '}
+                  Buffered links are folded in, the front matter above is written into the post, and{' '}
                   <span className="font-mono">{selectedPublishDraft.path}</span> moves into{' '}
-                  <span className="font-mono">_posts/</span> under a name taken from its title, and the
-                  commit to master deploys the site. There is no undo from here.
+                  <span className="font-mono">_posts/</span> under a name taken from its title — one
+                  commit to master, which deploys the site. There is no undo from here.
                 </p>
+                {titleChanged && (
+                  <p className="text-xs text-yellow-800 mt-2 font-medium">
+                    The title changes, so the post's URL is built from the new one.
+                  </p>
+                )}
                 <div className="flex items-center justify-end space-x-3 mt-3">
                   <button
                     type="button"
@@ -764,7 +982,18 @@ export const Queue: React.FC = () => {
                     disabled={publish.isPending}
                     onClick={() => {
                       setConfirmingPublish(false);
-                      publish.mutate({ draftId: selectedPublishDraft.id, prune });
+                      publish.mutate({
+                        draftId: selectedPublishDraft.id,
+                        prune,
+                        // All three, not a diff: what the boxes say is what the
+                        // post ships with, and an unchanged value writes itself
+                        // back unchanged.
+                        meta: {
+                          title: meta.title.trim(),
+                          description: meta.description.trim(),
+                          keywords: meta.keywords.trim(),
+                        },
+                      });
                     }}
                     className="bg-blue-600 text-white text-xs py-1.5 px-3 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                   >
@@ -795,6 +1024,21 @@ export const Queue: React.FC = () => {
             {publish.data.prunedSections.length > 0 && (
               <p className="text-xs text-gray-600 mt-1">
                 Pruned empty sections: {publish.data.prunedSections.join(', ')}
+              </p>
+            )}
+            {publish.data.metaUpdated !== undefined && publish.data.metaUpdated.length > 0 && (
+              <p className="text-xs text-gray-600 mt-1">
+                Front matter written: {publish.data.metaUpdated.join(', ')}
+              </p>
+            )}
+            {publish.data.metaUpdated === undefined && publish.variables?.meta !== undefined && (
+              // The reviewed metadata was sent and the service said nothing about
+              // it. That is what a deployment older than metadata support looks
+              // like from here, and the post it just created still carries the
+              // draft's front matter.
+              <p className="text-xs text-amber-700 mt-1">
+                The service did not report writing the front matter — it may predate metadata
+                support. Check the post and redeploy the service.
               </p>
             )}
           </div>

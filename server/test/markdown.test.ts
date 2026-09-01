@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  applyFrontMatter,
   existingUrlKeys,
   formatLink,
   frontMatterTitle,
@@ -635,4 +636,53 @@ golden('golden: the real curated draft', () => {
   expect(() => frontMatterTitle(prose)).not.toThrow();
   expect(frontMatterTitle(prose)).toBeNull();
   expect(isCuratedInsights(prose)).toBe(false);
+});
+
+/**
+ * Writing the front matter back.
+ *
+ * `frontMatterTitle` is the reader; these cover the writer's side of the same
+ * round trip, and the one rule the rest of this module lives by — a line we did
+ * not name comes back byte for byte.
+ */
+describe('applyFrontMatter', () => {
+  const FILE = ['---', 'layout: post', 'title: "Old"', 'description: ""', '---', '', '# Body'].join(
+    '\n',
+  );
+
+  it('round-trips through the reader, escaping and all', () => {
+    const written = applyFrontMatter(FILE, { title: 'Quarter "three" \\ 2026' });
+    expect(frontMatterTitle(written ?? '')).toBe('Quarter "three" \\ 2026');
+  });
+
+  it('returns the file untouched when the patch names nothing', () => {
+    expect(applyFrontMatter(FILE, {})).toBe(FILE);
+  });
+
+  it('is null for a file with no front matter, rather than inventing one', () => {
+    expect(applyFrontMatter('# Just a heading\n', { title: 'X' })).toBeNull();
+  });
+
+  it('leaves the body alone', () => {
+    const written = applyFrontMatter(FILE, { title: 'New' }) ?? '';
+    expect(written.endsWith('---\n\n# Body')).toBe(true);
+  });
+
+  it('keeps a CRLF file on CRLF', () => {
+    const crlf = FILE.replace(/\n/g, '\r\n');
+    const written = applyFrontMatter(crlf, { title: 'New', keywords: 'a, b' }) ?? '';
+    expect(written).toContain('title: "New"\r\n');
+    // The appended key gets the file's line ending too, not the platform's.
+    expect(written).toContain('keywords: "a, b"\r\n');
+    expect(written).not.toMatch(/[^\r]\n/);
+  });
+
+  it('normalises the separator on a line it rewrites', () => {
+    // `description:` with no value would otherwise become `description:"..."`,
+    // which YAML reads as a plain scalar and Jekyll fails the build over.
+    const written = applyFrontMatter('---\nlayout: post\ndescription:\n---\n', {
+      description: 'Set',
+    });
+    expect(written).toContain('description: "Set"');
+  });
 });

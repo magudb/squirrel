@@ -1,13 +1,18 @@
-import { Link, AnalyzeLinkResponse } from '../types';
+import { Link, AnalyzeLinkResponse, MetadataReview, PublishMeta } from '../types';
 
 /**
  * What is left of the local Express backend.
  *
  * Links are owned by the hosted service now (`squirrelApi.ts`); this module is
- * an optional AI sidecar plus the local clipboard history. Nothing here may be
- * load-bearing: the sidecar runs on exactly one machine, and the extension has
- * to work on every other one. So both network calls give up fast and fail to
- * `null`/`false` rather than throwing.
+ * an optional AI sidecar plus the local clipboard history. Suggesting a category
+ * for a link may not be load-bearing — the sidecar runs on exactly one machine
+ * and the extension has to work on every other one — so those calls give up fast
+ * and fail to `null`/`false` rather than throwing.
+ *
+ * `reviewMetadata` is the deliberate exception. It gates a publish, so a sidecar
+ * that is down or an agent that could not answer has to be *reported*: swallowed
+ * into a null it would read as "the metadata is fine" and ship an issue whose
+ * front matter describes a different one.
  */
 
 const BACKEND_URL = 'http://localhost:3001';
@@ -20,6 +25,13 @@ const FETCH_TIMEOUT_MS = 3000;
  * silently publishes the raw page title instead of a description.
  */
 export const ANALYZE_TIMEOUT_MS = 30_000;
+
+/**
+ * A metadata review reads a whole quarter of links rather than one page, and
+ * the agent CLI itself is given 120s by the sidecar. Anything shorter here aborts
+ * a call that was going to succeed and reports it as the sidecar being down.
+ */
+export const REVIEW_TIMEOUT_MS = 120_000;
 
 // Custom error for backend connectivity issues
 export class BackendError extends Error {
@@ -115,6 +127,49 @@ export class BlogService {
       // AI analysis is non-critical, return null silently
       return null;
     }
+  }
+
+  /**
+   * Ask the local agent whether a draft's front matter matches its links.
+   *
+   * Slow on purpose: the sidecar shells out to the agent CLI, and a real
+   * fifteen-link digest took 39s to review — comfortably past the 30s an
+   * `analyzeLink` is given, and the reason this call has its own budget rather
+   * than sharing that one.
+   *
+   * Throws `BackendError` on anything that is not an answer. The caller must
+   * not treat that as approval.
+   */
+  static async reviewMetadata(
+    input: PublishMeta & { content: string; forceRefresh?: boolean },
+  ): Promise<MetadataReview> {
+    const response = await fetchWithTimeout(
+      `${BACKEND_URL}/api/review-metadata`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: input.title ?? '',
+          description: input.description ?? '',
+          keywords: input.keywords ?? '',
+          content: input.content,
+          forceRefresh: input.forceRefresh ?? false,
+        }),
+      },
+      REVIEW_TIMEOUT_MS,
+    );
+
+    if (!response.ok) {
+      const detail = await response
+        .json()
+        .then((body: { error?: string }) => body.error)
+        .catch(() => undefined);
+      throw new BackendError(
+        detail ?? `The local AI sidecar answered ${response.status}`,
+        response.status,
+      );
+    }
+    return (await response.json()) as MetadataReview;
   }
 
   /** The kramdown IAL must touch the closing paren: one space before `{:` and

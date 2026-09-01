@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { SquirrelApi, SquirrelApiError, getConfig, setConfig } from '../utils/squirrelApi';
-import type { LinkPatch, NewDraft, PendingLink, SquirrelConfig } from '../types';
+import type { LinkPatch, NewDraft, PendingLink, PublishMeta, SquirrelConfig } from '../types';
 
 /**
  * Query keys for everything the Vercel link service answers.
@@ -260,7 +260,12 @@ export function usePublish() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: { draftId: string; slug?: string; prune?: boolean }) => SquirrelApi.publish(input),
+    mutationFn: (input: {
+      draftId: string;
+      slug?: string;
+      prune?: boolean;
+      meta?: PublishMeta;
+    }) => SquirrelApi.publish(input),
     // Publishing commits to master and triggers a live deploy. Nothing about
     // that is safe to repeat without the user asking again.
     retry: false,

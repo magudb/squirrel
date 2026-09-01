@@ -434,3 +434,161 @@ describe('publish', () => {
     );
   });
 });
+
+/**
+ * The metadata a publish may rewrite.
+ *
+ * The template ships `description` and `keywords` empty for the author to fill
+ * in at publish time, and a quarter's worth of links drifts away from whatever
+ * the title said in week one. These assert the two properties that make writing
+ * them safe: it happens inside the single publishing commit, and it touches
+ * nothing but the named scalars.
+ */
+describe('publish with metadata', () => {
+  const draftId = encodeDraftId(DRAFT_FILENAME);
+
+  /** The full front matter the draft template emits, including the empty pair. */
+  const TEMPLATED = `---
+layout: post
+title: "Tech Digest: Summer 2026"
+description: ""
+comments: false
+category: "Curated Insights"
+keywords: ""
+---
+<!-- markdownlint-disable MD033 MD020 MD025-->
+
+# <a name="favorites"></a>My favorites
+
+- [An article everyone should read](https://example.com/article){:target="_blank"}
+`;
+
+  const POST = '_posts/2026-08-26-tech-digest-summer-2026.md';
+
+  it('rewrites the scalars in place and reports which ones it wrote', async () => {
+    gh.readFile.mockResolvedValue(draftBlob(TEMPLATED));
+
+    const published = await publish({
+      draftId,
+      date: '2026-08-26',
+      meta: { description: 'Nine links on agents, Go tooling and the cost of a rewrite.' },
+    });
+
+    const written = writtenContent(POST);
+    expect(written).toContain(
+      'description: "Nine links on agents, Go tooling and the cost of a rewrite."',
+    );
+    // The empty one is replaced, not joined by a second copy.
+    expect(occurrences(written, 'description:')).toBe(1);
+    expect(published.metaUpdated).toEqual(['description']);
+  });
+
+  it('writes the metadata in the same commit that creates the post', async () => {
+    gh.readFile.mockResolvedValue(draftBlob(TEMPLATED));
+
+    await publish({ draftId, date: '2026-08-26', meta: { keywords: 'go, agents, ci' } });
+
+    // One commit or the announce job, which keys on files added under _posts/,
+    // fires for a post whose front matter is still the draft's.
+    expect(gh.commitChanges).toHaveBeenCalledTimes(1);
+    expect(changes().map((entry) => entry.path)).toEqual([POST, DRAFT_PATH]);
+    expect(writtenContent(POST)).toContain('keywords: "go, agents, ci"');
+  });
+
+  it('leaves every other line of the file exactly as it was', async () => {
+    gh.readFile.mockResolvedValue(draftBlob(TEMPLATED));
+
+    await publish({
+      draftId,
+      date: '2026-08-26',
+      prune: false,
+      meta: { description: 'A description.' },
+    });
+
+    const before = TEMPLATED.split('\n');
+    const after = writtenContent(POST).split('\n');
+    const differing = before
+      .map((line, index) => (line === after[index] ? null : index))
+      .filter((index): index is number => index !== null);
+    expect(differing).toEqual([before.indexOf('description: ""')]);
+  });
+
+  it('names the post from the new title, since that is the one being corrected', async () => {
+    gh.readFile.mockResolvedValue(draftBlob(TEMPLATED));
+
+    const published = await publish({
+      draftId,
+      date: '2026-08-26',
+      meta: { title: 'Fall 2026 Tech Links' },
+    });
+
+    expect(published.postPath).toBe('_posts/2026-08-26-fall-2026-tech-links.md');
+    expect(writtenContent(published.postPath)).toContain('title: "Fall 2026 Tech Links"');
+  });
+
+  it('lets an explicit slug name the file while the title still changes', async () => {
+    gh.readFile.mockResolvedValue(draftBlob(TEMPLATED));
+
+    const published = await publish({
+      draftId,
+      date: '2026-08-26',
+      slug: 'fall-2026-links',
+      meta: { title: 'Fall 2026 Tech Links' },
+    });
+
+    expect(published.postPath).toBe('_posts/2026-08-26-fall-2026-links.md');
+    expect(writtenContent(published.postPath)).toContain('title: "Fall 2026 Tech Links"');
+  });
+
+  it('appends a key the older drafts never had', async () => {
+    // DRAFT predates the template: it has a title and a category and nothing else.
+    const published = await publish({
+      draftId,
+      date: '2026-08-26',
+      meta: { keywords: 'architecture, go' },
+    });
+
+    const written = writtenContent(published.postPath);
+    expect(written).toMatch(/^---\nlayout: post\ntitle: .*\ncategory: .*\nkeywords: "architecture, go"\n---/);
+  });
+
+  it('escapes a quote rather than closing the scalar early', async () => {
+    gh.readFile.mockResolvedValue(draftBlob(TEMPLATED));
+
+    await publish({
+      draftId,
+      date: '2026-08-26',
+      // An unescaped `"` here ends the value and Jekyll fails the whole site.
+      meta: { description: 'On the "big rewrite" and its bill' },
+    });
+
+    expect(writtenContent(POST)).toContain(
+      'description: "On the \\"big rewrite\\" and its bill"',
+    );
+  });
+
+  it('refuses a draft with no front matter, before it claims the buffer', async () => {
+    gh.readFile.mockResolvedValue(draftBlob('Just prose, no front matter.\n'));
+    store.claimPending.mockResolvedValue([link({ id: 'lnk_a' })]);
+
+    const err = await rejection(
+      publish({ draftId, date: '2026-08-26', meta: { description: 'A description.' } }),
+    );
+
+    expect(err.status).toBe(409);
+    expect(err.code).toBe('no_front_matter');
+    // Nothing was claimed, so nothing has to be handed back and the buffer never
+    // went invisible.
+    expect(store.claimPending).not.toHaveBeenCalled();
+    expect(gh.commitChanges).not.toHaveBeenCalled();
+  });
+
+  it('publishes that same front-matter-less draft when no metadata is asked for', async () => {
+    gh.readFile.mockResolvedValue(draftBlob('Just prose, no front matter.\n'));
+
+    const published = await publish({ draftId, date: '2026-08-26' });
+
+    expect(published.ok).toBe(true);
+    expect(published.metaUpdated).toEqual([]);
+  });
+});

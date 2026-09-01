@@ -3,6 +3,7 @@ import { HttpError, methods, readJsonBody, withApiAuth } from './_lib/http.js';
 import {
   DRAFTS_DIR,
   assertWritablePath,
+  decodeDraftId,
   draftPathFor,
   draftRefFromFile,
   parseIsoDate,
@@ -50,6 +51,38 @@ function byCuratedThenNewest(a: DraftRef, b: DraftRef): number {
   return a.filename < b.filename ? 1 : -1;
 }
 
+interface DraftContent {
+  draft: DraftRef;
+  /** The file exactly as it sits on master, front matter included. */
+  content: string;
+}
+
+/**
+ * One draft with its body — what a pre-publish metadata review reads.
+ *
+ * The listing deliberately carries no content (a directory listing does not
+ * include it, and fetching every body to render a picker would be one GitHub
+ * read per draft on every popup open), so a client that needs the actual links
+ * asks for one draft by id.
+ *
+ * The id is resolved the same way `POST /api/publish` resolves it: decoded to a
+ * bare filename, then matched against a freshly fetched listing. The listing is
+ * the allowlist, so no caller string ever reaches a read path.
+ */
+async function readDraft(rawId: unknown): Promise<DraftContent> {
+  if (typeof rawId !== 'string') {
+    // Vercel hands a repeated query parameter over as an array.
+    throw new HttpError(400, 'id must be a single draft id', 'bad_draft_id');
+  }
+  const filename = decodeDraftId(rawId);
+  const entry = (await listDir(DRAFTS_DIR)).find((candidate) => candidate.name === filename);
+  if (entry === undefined) {
+    throw new HttpError(404, `No such draft: ${filename}`, 'draft_not_found');
+  }
+  const file = await readFile(entry.path);
+  return { draft: draftRefFromFile(entry.name, file.text), content: file.text };
+}
+
 interface CreateDraftResponse {
   draft: DraftRef;
   commitSha: string;
@@ -68,7 +101,16 @@ interface CreateDraftResponse {
  */
 export default withApiAuth(
   methods({
-    GET: async (_req, res) => {
+    GET: async (req, res) => {
+      // `?id=` asks for one draft and its body; no id at all is the picker.
+      // Optional-chained because the picker is the hottest endpoint here and a
+      // request object without a `query` at all should not turn it into a 500.
+      const id = req.query?.id;
+      if (id !== undefined) {
+        res.status(200).json(await readDraft(id));
+        return;
+      }
+
       const entries = (await listDir(DRAFTS_DIR)).filter((entry) => MARKDOWN.test(entry.name));
       const drafts = await mapBounded(entries, READ_CONCURRENCY, async (entry) => {
         // A draft with no front matter at all is a real case in this repo

@@ -49,6 +49,17 @@ vi.mock('../hooks/useSquirrel', () => ({
   }),
 }));
 
+// The publish gate is not what this file is about; it only has to exist.
+vi.mock('../hooks/useMetadataReview', () => ({
+  useMetadataReview: () => ({
+    review: vi.fn(),
+    data: null,
+    isReviewing: false,
+    error: null,
+    reset: vi.fn(),
+  }),
+}));
+
 import { Queue } from '../components/Queue';
 
 const TITLE = 'Curated Insights: Q4 2026 — Don’t Panic';

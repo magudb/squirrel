@@ -284,6 +284,104 @@ export function isCuratedInsights(content: string): boolean {
 }
 
 /**
+ * The escape half of `unquote`, and the only two characters that get one.
+ *
+ * Lives here rather than next to the draft template because it is the exact
+ * inverse of the reader above: `unquote` reverses `\"` and `\\` and nothing
+ * else, so those are the only two a writer may emit. Backslash first, or the
+ * backslash pass would escape the backslashes the quote pass just added.
+ *
+ * Everything a double-quoted scalar cannot carry — newlines, other control
+ * characters, and the `<`/`>` Jekyll would render into the page unescaped — is
+ * rejected upstream by `normalizeScalar` rather than escaped, because escaping
+ * those would not round-trip.
+ */
+export function escapeYamlDoubleQuoted(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+/** False for `_drafts/2025-06-20-on AI.md`, which is plain prose. */
+export function hasFrontMatter(content: string): boolean {
+  return FRONT_MATTER_RE.test(content);
+}
+
+/** The scalars a publish may rewrite. Everything else in the block is left alone. */
+export interface FrontMatterPatch {
+  title?: string;
+  description?: string;
+  keywords?: string;
+}
+
+/** Where the block's text starts inside a front-matter match: past `---` and its newline. */
+function innerOffset(match: string): number {
+  return match.startsWith('---\r\n') ? 5 : 4;
+}
+
+/**
+ * Rewrite named scalars in the front matter and return the whole file back.
+ *
+ * Null when there is no front matter to write into — the caller decides whether
+ * that is a 409 or simply nothing to do, and this module does not invent a
+ * block for a file that never had one.
+ *
+ * The same governing constraint as the rest of this module applies: a published
+ * post is a file a human will read as a diff. So the body, the delimiters and
+ * every key that is not in the patch come back byte for byte, and only the
+ * matched lines change.
+ *
+ * A rewritten line IS normalised to `key: "value"`, dropping any unusual spacing
+ * that sat around its colon. That is a line we are already changing, and the
+ * alternative — preserving the original separator — turns a valueless
+ * `description:` into `description:"..."`, which YAML reads as a plain scalar
+ * rather than a mapping and takes the blog's build down with it.
+ *
+ * A key the block does not have is appended before the closing `---`, since the
+ * legacy drafts predate the template and carry no `description` at all.
+ */
+export function applyFrontMatter(content: string, patch: FrontMatterPatch): string | null {
+  const wanted = Object.entries(patch).filter(
+    (entry): entry is [string, string] => entry[1] !== undefined,
+  );
+  if (wanted.length === 0) return content;
+
+  const fm = FRONT_MATTER_RE.exec(content);
+  if (fm === null) return null;
+
+  const block = fm[1];
+  const pending = new Map(wanted);
+  const write = (key: string, value: string, cr: string): string =>
+    `${key}: "${escapeYamlDoubleQuoted(value)}"${cr}`;
+
+  // Split on \n and carry each line's own \r, so a CRLF file stays CRLF and a
+  // mixed one is not silently re-ended.
+  const rewritten = block.split('\n').map((line) => {
+    const cr = line.endsWith('\r') ? '\r' : '';
+    const key = /^([A-Za-z0-9_-]+)[ \t]*:/.exec(cr === '' ? line : line.slice(0, -1));
+    if (key === null) return line;
+    const value = pending.get(key[1]);
+    if (value === undefined) return line;
+    pending.delete(key[1]);
+    return write(key[1], value, cr);
+  });
+
+  // The block's last line carries no `\r`: the one before the closing `---`
+  // belongs to the delimiter, not to the block. So a line only gets a CR once it
+  // has a successor — otherwise appending produces `\r\r\n` and the front
+  // matter ends with a stray carriage return.
+  const cr = /\r\n/.test(block) ? '\r' : '';
+  const appended = [...pending].map(([key, value]) => write(key, value, ''));
+  if (appended.length > 0 && cr === '\r') {
+    const last = rewritten.length - 1;
+    if (!rewritten[last].endsWith('\r')) rewritten[last] += '\r';
+    for (let index = 0; index < appended.length - 1; index++) appended[index] += '\r';
+  }
+  const rebuilt = [...rewritten, ...appended].join('\n');
+
+  const start = fm.index + innerOffset(fm[0]);
+  return content.slice(0, start) + rebuilt + content.slice(start + block.length);
+}
+
+/**
  * Exactly one `\n` at EOF, no trailing blank lines. Applied to every body we
  * write, because an empty section at the end of a file with no final newline
  * gets a bullet spliced into its heading otherwise.

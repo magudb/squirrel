@@ -2,12 +2,14 @@ import type {
   Category,
   CreateDraftResponse,
   CreateLinkResponse,
+  DraftContent,
   DraftRef,
   FlushResult,
   LinkPatch,
   NewDraft,
   NewLink,
   PendingLink,
+  PublishMeta,
   PublishResult,
   SquirrelConfig,
   StatusResponse,
@@ -310,6 +312,31 @@ export const SquirrelApi = {
   },
 
   /**
+   * One draft with its body.
+   *
+   * The listing carries no content — it would be a GitHub read per draft on
+   * every popup open — so the metadata review fetches the one draft it is about
+   * to publish. 404 arrives as a `SquirrelApiError` with that status when the
+   * draft has been published or renamed since the listing was cached.
+   */
+  async getDraft(id: string): Promise<DraftContent> {
+    const draft = await call<DraftContent>(`/api/drafts?id=${encodeURIComponent(id)}`);
+    // A deployment older than `?id=` ignores the parameter and answers with the
+    // listing — an array, from which `content` reads as undefined. Caught here
+    // rather than downstream because every check further on phrases its failure
+    // as a fact about the draft ("no front matter"), and the draft is fine.
+    if (typeof draft?.content !== 'string') {
+      throw new SquirrelApiError(
+        'The service returned no draft body. This deployment predates the metadata review — ' +
+          'deploy the service and try again.',
+        undefined,
+        'draft_content_missing',
+      );
+    }
+    return draft;
+  },
+
+  /**
    * Creates the next draft file and commits it to master.
    *
    * Slow timeout for the same reason flush and publish use it: the service does
@@ -339,7 +366,17 @@ export const SquirrelApi = {
     return target;
   },
 
-  publish(input: { draftId: string; slug?: string; prune?: boolean }): Promise<PublishResult> {
+  /**
+   * `meta` rewrites the post's front matter inside the same commit that creates
+   * it. The service normalises and re-validates every value; a rejection there
+   * is a 400 naming the field, not a half-written post.
+   */
+  publish(input: {
+    draftId: string;
+    slug?: string;
+    prune?: boolean;
+    meta?: PublishMeta;
+  }): Promise<PublishResult> {
     return call<PublishResult>('/api/publish', {
       method: 'POST',
       body: input,

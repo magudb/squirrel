@@ -23,7 +23,14 @@ import {
 import { commitWithRetry, fileExists, listDir, readFile } from './github.js';
 import { HttpError } from './http.js';
 import { withLock } from './lock.js';
-import { frontMatterTitle, normalizeTrailingNewline, pruneEmptySections } from './markdown.js';
+import {
+  applyFrontMatter,
+  frontMatterTitle,
+  hasFrontMatter,
+  normalizeTrailingNewline,
+  pruneEmptySections,
+  type FrontMatterPatch,
+} from './markdown.js';
 import { DRAFTS_DIR, assertWritablePath, decodeDraftId, postPathFor } from './paths.js';
 import {
   claimPending,
@@ -41,6 +48,28 @@ export interface PublishInput {
   slug?: string;
   date?: string;
   prune?: boolean;
+  /**
+   * Front-matter scalars to rewrite as part of the publishing commit.
+   *
+   * The draft template ships `description` and `keywords` empty for the author
+   * to fill in at publish time, and a digest's title drifts from its content as
+   * links accumulate over a quarter. Writing them here rather than in a second
+   * commit keeps the one-commit property the rest of this module is built on:
+   * the post is created with the metadata it will be read with, and the announce
+   * job — which keys on files ADDED under `_posts/` — still fires exactly once.
+   *
+   * Values arrive already normalised by the route; nothing here re-validates the
+   * text, but `applyFrontMatter` is the only thing that writes it.
+   */
+  meta?: FrontMatterPatch;
+}
+
+/** The keys of `meta` that actually carry a value. */
+function metaFields(meta: FrontMatterPatch | undefined): string[] {
+  if (meta === undefined) return [];
+  return Object.entries(meta)
+    .filter(([, value]) => value !== undefined)
+    .map(([key]) => key);
 }
 
 /**
@@ -115,6 +144,7 @@ async function publishLocked(
     TIMING.githubDeadlineMs,
   );
 
+  const updating = metaFields(input.meta);
   const state: { folded: FoldOutcome | null; pruned: string[] } = { folded: null, pruned: [] };
   let draftPath: string | null = null;
   let postPath: string | null = null;
@@ -139,6 +169,7 @@ async function publishLocked(
       skipped: folded.skippedIds.length,
       unroutable: folded.unroutableIds.length,
       prunedSections: state.pruned,
+      metaUpdated: updating,
     };
   };
 
@@ -152,9 +183,25 @@ async function publishLocked(
     draftPath = entry.path;
 
     const draft = await readFile(draftPath, controller.signal);
+
+    // Refused before anything is claimed: a draft with no front matter has no
+    // block to write into (`_drafts/2025-06-20-on AI.md` is plain prose), and
+    // inventing one would put a header on a file whose author never had it.
+    if (updating.length > 0 && !hasFrontMatter(draft.text)) {
+      throw new HttpError(
+        409,
+        `${draftPath} has no front matter to write metadata into`,
+        'no_front_matter',
+      );
+    }
+
     // `postPathFor` slugifies, so a caller-supplied slug goes through the same
-    // filter as a front-matter title rather than being trusted as given.
-    const title = input.slug ?? frontMatterTitle(draft.text) ?? titleFromFilename(filename);
+    // filter as a front-matter title rather than being trusted as given. A new
+    // title outranks the one in the file for the same reason it is being
+    // rewritten: the file's is the one that no longer matches the content. An
+    // explicit slug still wins, since it names the destination and nothing else.
+    const title =
+      input.slug ?? input.meta?.title ?? frontMatterTitle(draft.text) ?? titleFromFilename(filename);
     postPath = postPathFor(title, date);
 
     assertWritablePath(draftPath);
@@ -183,11 +230,26 @@ async function publishLocked(
           input.prune === false
             ? { content: folded.content, pruned: [] }
             : pruneEmptySections(folded.content);
+        // After folding and pruning, so the patch is applied to the bytes that
+        // are about to be written rather than to a copy that pruning then
+        // rebuilds. Re-read every attempt like everything else in this callback.
+        const finalContent =
+          updating.length > 0 ? applyFrontMatter(tidied.content, input.meta ?? {}) : tidied.content;
+        if (finalContent === null) {
+          // The draft lost its front matter between the check above and this
+          // re-read. Vanishingly unlikely, and still not something to paper over
+          // by writing a post without the metadata the caller asked for.
+          throw new HttpError(
+            409,
+            `${paths.draftPath} has no front matter to write metadata into`,
+            'no_front_matter',
+          );
+        }
         state.folded = folded;
         state.pruned = tidied.pruned;
         return {
           changes: [
-            { path: paths.postPath, content: normalizeTrailingNewline(tidied.content) },
+            { path: paths.postPath, content: normalizeTrailingNewline(finalContent) },
             { path: paths.draftPath, delete: true },
           ],
           message: `squirrel: publish ${paths.postPath} (+${folded.committedIds.length} links, flush ${flushId})`,
