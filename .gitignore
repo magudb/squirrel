@@ -88,3 +88,4 @@ dist/
 
 # Agent tooling docs injected into the workspace, not project source
 .agents/
+web/
